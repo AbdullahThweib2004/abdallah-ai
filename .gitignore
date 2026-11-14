@@ -9,6 +9,7 @@
 *.m4a
 media/private/
 chroma_data/
+knowledge_base/_private/
 *.sqlite
 *.sqlite3
 

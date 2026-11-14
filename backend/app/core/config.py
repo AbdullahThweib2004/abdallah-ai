@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "staging", "production", "test"] = "development"
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+    knowledge_base_dir: Path = Path("../knowledge_base")
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -25,6 +26,12 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("knowledge_base_dir", mode="after")
+    @classmethod
+    def _resolve_knowledge_base_dir(cls, value: Path) -> Path:
+        # Relative paths are resolved against backend/, independent of the working directory.
+        return value if value.is_absolute() else (_BACKEND_DIR / value).resolve()
 
 
 @lru_cache

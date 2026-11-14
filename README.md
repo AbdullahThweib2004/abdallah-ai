@@ -7,8 +7,8 @@ with an AI-powered digital representative of Abdullah. The representative answer
 knowledge base, speaks with an authorized voice, and appears as a realistic animated avatar. It is
 clearly labelled as AI and never claims to be the real Abdullah.
 
-The project is built in stages, starting on a small budget. **Current stage: 1 – Foundation**, with a
-minimal frontend and backend and no AI features yet. See [`CLAUDE.md`](CLAUDE.md) for the full build
+The project is built in stages, starting on a small budget. **Current stage: 2 – Knowledge base**: content
+templates for Abdullah to fill in, plus a strict validator. There are no AI features yet. See [`CLAUDE.md`](CLAUDE.md) for the full build
 order and project rules, and [`docs/`](docs/) for the architecture, API and requirements.
 
 ## Repository layout
@@ -60,6 +60,7 @@ Open <http://localhost:3000>. When the backend is running, the badge shows **Bac
 cd backend
 uv run pytest           # unit and API tests
 uv run ruff check .     # lint
+uv run python -m app.knowledge.cli validate   # knowledge base (see knowledge_base/README.md)
 
 cd frontend
 npm run lint
