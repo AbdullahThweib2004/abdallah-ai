@@ -55,6 +55,26 @@ class Settings(BaseSettings):
     chat_rate_per_day: int = Field(default=60, ge=1)
     chat_max_requests_per_day: int = Field(default=500, ge=1)
 
+    # --- Voice (see app/voice). Defaults need no key: fake STT, the browser's own voice. ---
+    # STT reuses LLM_BASE_URL and LLM_API_KEY (Groq's OpenAI-compatible /audio/transcriptions).
+    stt_provider: Literal["fake", "groq"] = "fake"
+    stt_model: str = "whisper-large-v3"
+    stt_timeout_seconds: float = Field(default=20, gt=0)
+    # `browser` = speechSynthesis in the visitor's browser (free; no backend audio at all).
+    tts_provider: Literal["fake", "browser", "elevenlabs"] = "browser"
+    tts_model: str = "eleven_v4_turbo"
+    # ElevenLabs stock voice ids (not secrets). Default: "Chris", a male premade voice with
+    # Arabic listed among its ElevenLabs-verified languages; one multilingual voice for both.
+    tts_voice_en: str = "iP95p4xoKVk53GoZ742B"
+    tts_voice_ar: str = "iP95p4xoKVk53GoZ742B"
+    tts_timeout_seconds: float = Field(default=15, gt=0)
+    elevenlabs_api_key: SecretStr | None = None
+    # Per IP. Each spoken sentence is one /voice/speak call, hence the higher TTS limit.
+    voice_rate_per_minute: int = Field(default=6, ge=1)
+    tts_rate_per_minute: int = Field(default=40, ge=1)
+    # Global daily budget of synthesized characters (UTC day), protecting the free tier.
+    tts_max_chars_per_day: int = Field(default=20_000, ge=0)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
@@ -70,6 +90,7 @@ class Settings(BaseSettings):
         "llm_fallback_model",
         "llm_reasoning_effort",
         "llm_reasoning_effort_ar",
+        "elevenlabs_api_key",
         mode="before",
     )
     @classmethod
