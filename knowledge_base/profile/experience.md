@@ -1,49 +1,38 @@
 ---
 id: experience
 type: profile
-title: "Experience"
+title: "Practical Training at Bank of Palestine"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
+last_reviewed: null
+tags: [experience, bank-of-palestine, internship]
 ---
-
 <!--
-  ⚠️ WARNING (spec section 20): include ONLY the departments and responsibilities that Abdullah
-  has personally confirmed as accurate. Do not guess, generalize, or copy from job descriptions.
-  Do not include confidential bank information, internal system names, customer data,
-  or anything Abdullah has not explicitly approved for public use.
+WARNING (spec section 20): include only departments and responsibilities that Abdullah confirms.
+Never name internal systems, internal tools, colleagues, or anything about customers or bank data.
+Everything below comes from Abdullah's own CV.
 -->
+# Practical Training at Bank of Palestine
 
-# Experience
+## Role
+Software Development Intern at Bank of Palestine, Palestine, as part of a dual-study training programme (about two years of training in total). Started in December 2022.
 
-## Practical training at Bank of Palestine
-
-Practical training at Bank of Palestine for approximately two years.
-
-TODO: What are the exact start and end dates (YYYY-MM)? Was it part-time alongside your studies?
+<!-- TODO: Is the training still ongoing, or has it ended? If ended, give the end month. -->
 
 ## Departments
-
-TODO: Which departments or teams did you work in? List only ones you have confirmed.
+Abdullah rotated across several departments: Software Development, Networking, Database Management, and Information Security.
 
 ## Responsibilities
+- Developed and maintained secure web-based applications using JavaScript, React, PHP and TypeScript, following the team's code quality and reliability standards.
+- Assisted in configuring and troubleshooting network devices, performed basic network diagnostics, and wrote documentation.
+- Worked with SQL Server: writing queries, managing data, and supporting database-driven systems.
+- Collaborated with development teams in Agile environments and contributed to internal tools and APIs.
 
-TODO: What were you responsible for in each department? Use concrete tasks, not job-description wording.
+## What he took away from it
+<!-- TODO: Two or three sentences in your own words: what did the training teach you? What did you enjoy most? Recruiters will ask this. -->
 
-## Software development work
+## Confidentiality
+Details about the bank's internal systems, internal tools and customer data are confidential and are not part of this portfolio.
 
-TODO: What software did you build or help build during the training? What could be shared publicly, and what must stay confidential?
-
-## Technologies used
-
-TODO: Which tools and technologies did you actually use during the training?
-
-## What you learned
-
-TODO: What are the 2–3 most important things you learned there?
-
-## Other experience
-
-TODO: Is there any other work, internship, freelance, or volunteer experience to include? If none, write "None."
+<!-- TODO: Anything specific that must never be mentioned? Put it in knowledge_base/_private/never_public.md, not here. -->

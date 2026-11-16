@@ -3,26 +3,18 @@ id: goals
 type: career
 title: "Career Goals"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
+last_reviewed: null
+tags: [goals, career]
 ---
-
 # Career Goals
 
-## Short-term goals
+## What he is looking for
+<!-- TODO: What kind of role are you looking for (AI Engineer, Software Engineer, security-focused)? Full-time, internship, freelance? Remote, Palestine, abroad? -->
 
-TODO: What do you want to achieve in the next 6–12 months?
+## Next steps
+<!-- TODO: What do you want to learn or build next? -->
 
-## Roles and opportunities
-
-TODO: Which roles, companies, or collaborations are you looking for? Any you are NOT interested in?
-
-## Long-term direction
-
-TODO: Where do you want to be in 3–5 years?
-
-## Message for recruiters and collaborators
-
-TODO: What is the one thing a recruiter or collaborator should know about working with you?
+## Availability
+<!-- TODO: When are you available to start? Delete if you prefer not to say. -->

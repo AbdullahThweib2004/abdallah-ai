@@ -1,30 +1,24 @@
 ---
 id: interests
 type: career
-title: "Professional Interests"
+title: "Interests"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
+last_reviewed: null
+tags: [interests]
 ---
+# Interests
 
-# Professional Interests
+## Professional interests
+- AI engineering and LLM applications.
+- Retrieval-augmented generation (RAG).
+- The Model Context Protocol (MCP) and tool-using AI agents.
+- Security of AI systems: prompt injection, least privilege, and governing autonomous agents.
+- Cybersecurity and secure software development.
+- Low-level performance engineering, such as SIMD, multithreading and quantization.
 
-## Main interests
-
-Interests: AI Engineering, LLM applications, RAG, and MCP.
-
-TODO: Is this list complete and in the right order of importance?
-
-## Why these interests
-
-TODO: What got you interested in these areas? One or two sentences for each is enough.
-
-## Currently exploring
-
-TODO: What are you learning or experimenting with right now?
+<!-- TODO: Confirm or reorder this list. Is there something you are exploring right now? -->
 
 ## Outside work
-
-TODO: Optional: any non-work interests you are happy to share publicly? If not, write "Not shared."
+<!-- TODO: Optional. Hobbies or things you enjoy, if you want the avatar to be able to chat about them. Delete the section if not. -->

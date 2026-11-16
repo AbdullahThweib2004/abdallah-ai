@@ -1,46 +1,52 @@
 ---
 id: terms-ar-en
 type: glossary
-title: "Arabic ↔ English Terms"
+title: "Arabic and English Terms"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
+last_reviewed: null
+tags: [glossary, arabic]
 ---
+# Arabic and English Terms
 
-<!--
-  Used to improve Arabic retrieval and, later, TTS pronunciation.
-  Fill the Arabic column with the spelling you actually use. Use Notes for pronunciation hints.
--->
-
-# Arabic ↔ English Terms
-
-## Names and organizations
-
+## Names and places
 | English | Arabic | Notes |
 |---|---|---|
-| Abdullah | TODO | TODO: Preferred Arabic spelling of your full name? |
-| Al-Quds University | TODO | TODO: Official Arabic name? |
-| Bank of Palestine | TODO | TODO: Official Arabic name? |
-| Information Technology | TODO | TODO: Arabic name of the degree as written on your certificate? |
+| Abdullah | عبدالله | TODO: confirm the spelling you prefer, and add the family name in Arabic and English |
+| Al-Quds University | جامعة القدس | |
+| Bank of Palestine | بنك فلسطين | |
+| Freie Universität Berlin | جامعة برلين الحرة | |
+| Bethlehem | بيت لحم | |
+| Palestine | فلسطين | |
+| Information Technology | تكنولوجيا المعلومات | |
+| Dual-study training | التعليم الثنائي (دراسة وتدريب) | TODO: is this how you say it in Arabic? |
 
-## Projects
-
+## Project names
 | English | Arabic | Notes |
 |---|---|---|
-| AI-Powered Banking Intelligence Platform | TODO | TODO: Keep the English name in Arabic speech, or translate it? |
-| MeetFlow AI | TODO | TODO: Keep the English name in Arabic speech, or translate it? |
-| MNIST Classifier | TODO | TODO: How should "MNIST" be pronounced? |
-| MCP Security Research | TODO | TODO: Keep the English name in Arabic speech, or translate it? |
+| AI Developer Assistant | مساعد المطورين الذكي | Usually kept in English when spoken |
+| AI-Powered Banking Intelligence Platform | منصة الذكاء المصرفي | |
+| AI Agent Security & Control Platform | منصة أمان وحوكمة وكلاء الذكاء الاصطناعي | |
+| Nawa | نواة | TODO: confirm this is the meaning of the name |
+| RAG AI Assistant | مساعد RAG للمستندات | |
+| Momentum | Momentum | Kept in English |
+| Smart System | Smart System | Kept in English |
 
 ## Technical terms
-
 | English | Arabic | Notes |
 |---|---|---|
-| AI Engineering | TODO | TODO: Preferred Arabic term? |
-| LLM | TODO | TODO: Say the letters "L-L-M", or use an Arabic term? |
-| RAG | TODO | TODO: Say "RAG" as a word, spell the letters, or use an Arabic term? |
-| MCP | TODO | TODO: Say the letters "M-C-P", or use an Arabic term? |
-| credit-risk analysis | TODO | TODO: Preferred Arabic term? |
-| intelligent document processing | TODO | TODO: Preferred Arabic term? |
+| Retrieval-Augmented Generation (RAG) | التوليد المعزز بالاسترجاع | Usually said as "RAG" |
+| Large Language Model (LLM) | نموذج لغوي كبير | Usually said as "LLM" |
+| Model Context Protocol (MCP) | بروتوكول سياق النموذج | Usually said as "MCP" |
+| AI agent | وكيل ذكاء اصطناعي | |
+| Prompt injection | حقن الأوامر | |
+| Least privilege | أقل صلاحية لازمة | |
+| Inference engine | محرك استدلال | |
+| Quantization | التكميم | |
+| Embeddings | التضمينات (Embeddings) | Usually said in English |
+| Vector database | قاعدة بيانات متجهات | |
+| Credit risk | مخاطر الائتمان | |
+| OCR | التعرف الضوئي على الحروف | Usually said as "OCR" |
+| Row Level Security | أمان على مستوى الصفوف | |
+| Audit log | سجل التدقيق | |

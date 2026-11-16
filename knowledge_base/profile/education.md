@@ -3,36 +3,25 @@ id: education
 type: profile
 title: "Education"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
+last_reviewed: null
+tags: [education]
 ---
-
 # Education
 
 ## Degree
+B.Sc. in Information Technology at Al-Quds University, Palestine, started in August 2022.
 
-Degree: Information Technology, Al-Quds University.
+<!-- TODO: Graduated or still studying? Graduation date (actual or expected)? -->
+<!-- TODO: Was the AI-Powered Banking Intelligence Platform your official graduation project? Solo or team? -->
 
-TODO: What is the exact official name of the degree (e.g. B.Sc. in Information Technology)?
+## Exchange semester
+Erasmus+ International Credit Mobility (ICM) exchange semester at Freie Universität Berlin, Germany, from April to August 2024.
 
-## Dates
+<!-- TODO: What did you study or work on in Berlin? Any course or project worth mentioning? -->
 
-TODO: When did you start and finish (YYYY or YYYY-MM)? If not finished, what is the expected date?
+## Activities
+Participated in university coding clubs and in hackathons.
 
-## Grades and honours
-
-TODO: Do you want a GPA, grade, or honour to be public? If not, write "Not shared."
-
-## Relevant coursework
-
-TODO: Which 3–6 courses are most relevant to AI Engineering and software development?
-
-## Graduation project
-
-TODO: What was your graduation project, if any? If it is one of the projects in projects/, give its project ID instead of repeating details.
-
-## Certifications and other courses
-
-TODO: Which certificates, bootcamps, or online courses should be listed? Include issuer and year only if you can verify them.
+<!-- TODO: Which hackathons, and what did you build there? Any results? Remove this TODO if you prefer to keep it general. -->

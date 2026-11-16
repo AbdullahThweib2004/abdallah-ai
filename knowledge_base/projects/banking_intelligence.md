@@ -3,82 +3,80 @@ id: banking-intelligence
 type: project
 title: "AI-Powered Banking Intelligence Platform"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
-project_status: null          # TODO: completed | in_progress | research
-technologies: []              # TODO: e.g. ["Python", "FastAPI"] (only what you actually used)
-repository_url: null          # TODO: https:// link to the public repo, or leave null
-demo_url: null                # TODO: https:// link to a public demo, or leave null
-featured: false
-order: 0
+last_reviewed: null
+tags: [banking, rag, llm, ocr, credit-risk, graduation-project]
+project_status: in_progress  # TODO: completed or in_progress? Core features are done; security hardening and deployment phases are still pending.
+technologies: [React, TypeScript, Vite, Tailwind CSS, shadcn/ui, Supabase, PostgreSQL, pgvector, Supabase Edge Functions, FastAPI, Tesseract OCR, OpenCV, WeasyPrint, OpenRouter]
+repository_url: https://github.com/AbdullahThweib2004/banking-intelligence-platform
+demo_url: null
+featured: true
+order: 2
 ---
-
 # Project: AI-Powered Banking Intelligence Platform
 
 ## Project ID
-
-`banking-intelligence`
+See frontmatter.
 
 ## Status
-
-See frontmatter `project_status`.
+See frontmatter. Built as an academic graduation project, a realistic demo rather than a production banking system.
 
 ## One-line summary
-
-Components: credit-risk analysis, intelligent document processing, and a bilingual RAG assistant.
-
-TODO: In one sentence, what is this project and what does it do?
+A bilingual English and Arabic web platform that simulates the internal tools of a Bank of Palestine branch: AI credit-risk scoring, ID-photo account opening with OCR, an approvals workflow, and a policy-grounded RAG assistant.
 
 ## Problem
-
-TODO: What problem does it solve, and why does that problem matter?
+Branch staff juggle disconnected tools and manual steps: entering credit applications, retyping a customer's ID to open an account, tracking which loan applications are waiting for review, and searching PDF handbooks for policy answers. The platform brings these workflows into one role-aware dashboard.
 
 ## Target users
-
-TODO: Who is it for? Who used it, or who would use it?
+Three internal bank roles: branch employees, branch managers, and the risk department.
 
 ## Abdullah's contribution
-
-TODO: What exactly did you build yourself vs. the team? Be specific. Was this a solo, team, university, or employer project?
+<!-- TODO: Solo or team? What exactly did you build yourself? -->
+<!-- TODO: Is this connected to your training at Bank of Palestine, or an independent graduation project that uses the bank as its scenario? Did the bank review or use it? -->
 
 ## Architecture
-
-TODO: What are the main components and how does data flow between them? A short text diagram is fine.
+A React single-page application backed by Supabase: PostgreSQL with Row Level Security, Auth, Realtime, Storage, and three Edge Functions (AI credit assessment, policy semantic search, and privileged user administration). A separate FastAPI microservice handles OCR of ID photos and PDF generation for the account-opening flow. LLM calls and embeddings go through OpenRouter.
 
 ## Technologies
-
-TODO: Which languages, frameworks, models, and databases did you use, and what was each one used for? Also list them in frontmatter `technologies`.
+See frontmatter.
 
 ## Data sources
+Seeded demo data only, including ten demo customers. The AI assistant's knowledge base is three policy documents written for the project: a loan policy, an account-opening policy, and customer service guidelines. No real customer data is used.
 
-TODO: What data did it use (public dataset, synthetic, real)? Do NOT include confidential or customer data.
+<!-- TODO: Confirm the policy documents were written for the project and are not real internal bank documents. -->
 
 ## Key implementation details
+- AI credit scoring: the LLM returns a structured JSON result with score, risk category, confidence, a plain-language summary, ranked contributing factors and a recommended action. If the AI call fails, the app falls back to a deterministic, unit-tested scoring model with the same output shape.
+- Account opening: a four-step wizard uploads an ID photo, extracts fields with Tesseract and OpenCV (regex parsing with an optional LLM fallback), collects two signatures, and generates a bilingual two-copy PDF form.
+- RAG assistant: answers only from the bank's policy documents, cites the source policy section, detects English or Arabic, and refuses out-of-scope questions. It uses pgvector semantic search, with an in-browser keyword search fallback if the vector store is unreachable.
+- Access control enforced in the database: Row Level Security policies for the three roles, and an append-only audit log written by Postgres triggers so it cannot be skipped by a UI bug.
+- Explainability: every credit score is saved with its explanation, and a custom Help Mode lets users click any UI element to see what it does.
+- Full English and Arabic interface with right-to-left layout.
+- The codebase started from a generated scaffold and was then built out over about three weeks in June and July 2026.
 
-TODO: Which 2–4 technical details would a CTO or developer find most interesting?
+<!-- TODO: OK to keep the scaffold sentence? It is accurate and shows honesty, but you decide. -->
 
 ## Challenges and trade-offs
-
-TODO: What was hard? What did you decide not to do, and why?
+- The LLM provider was unreliable during development (rate limits and credits), which led to the AI-first design with an algorithmic fallback.
+- Fixed a React infinite render loop in the Help Mode by keying target registration on a content hash and memoizing the context value.
+- Role checks read the role from the login token to avoid recursive database policies. The trade-off is that a role change only takes effect after the user signs in again.
 
 ## Results (only verified results)
-
-TODO: Which results can you prove (metrics, evaluations, users, grades)? Leave this section saying "No verified results yet." rather than estimating.
+- A self-authored QA package: 96 documented test cases, 9 automated unit tests (all passing), and an overall verdict of "conditional pass, academic and demo ready".
+- The production build passes.
 
 ## Limitations
+- An academic demo, not cleared for a bank pilot or production.
+- Known open issues at the last review: the OCR service trusts a role header sent by the client instead of verifying the user's session, role changes need a re-login, and there are no end-to-end tests or CI yet.
 
-TODO: What does it not do well yet? What would you improve next?
+<!-- TODO: Have any of these been fixed since? Update this section if so. -->
 
 ## Public repository
-
-See frontmatter `repository_url`.
+See frontmatter.
 
 ## Demo URL
-
-See frontmatter `demo_url`.
+See frontmatter.
 
 ## Last reviewed
-
-See frontmatter `last_reviewed`.
+See frontmatter.

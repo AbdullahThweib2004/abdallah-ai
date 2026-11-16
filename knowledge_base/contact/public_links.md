@@ -1,39 +1,34 @@
 ---
 id: public-links
 type: contact
-title: "Public Contact Links"
+title: "Public Links and Contact"
 language: en
-status: draft                 # draft | approved (only approved is ever served publicly)
+status: draft
 visibility: public
-last_reviewed: null           # YYYY-MM-DD, required when status = approved
-tags: []
-# These links become the allowlist for the `open_public_link` UI action (build step 6).
-# url: https:// only, except kind=email which must be mailto:. Leave url null until verified.
+last_reviewed: null
+tags: [contact]
 links:
   - link_id: github
     label: "GitHub"
-    url: null                 # TODO: https://github.com/<username>
+    url: https://github.com/AbdullahThweib2004
     kind: github
   - link_id: linkedin
     label: "LinkedIn"
-    url: null                 # TODO: https://www.linkedin.com/in/<handle>
+    url: https://www.linkedin.com/in/abdallah-thuieb
     kind: linkedin
+  - link_id: personal-website
+    label: "Personal website"
+    url: https://abdallahthweib.vercel.app
+    kind: other
   - link_id: email
     label: "Email"
-    url: null                 # TODO: mailto:<address> (only an address you want to be public)
+    url: null  # TODO: which email should be public? Format: mailto:name@example.com
     kind: email
 ---
+# Public Links and Contact
 
-# Public Contact Links
+## How to reach Abdullah
+Visitors can find Abdullah's code on GitHub, his professional profile on LinkedIn, and his personal website. They can also contact him by email.
 
-## Preferred contact method
-
-TODO: How should visitors contact you first (email, LinkedIn, other)?
-
-## Response expectations
-
-TODO: Optional: how quickly do you usually reply? If you prefer not to say, write "Not shared."
-
-## Other public links
-
-TODO: Are there other public links (portfolio demos, blog, Hugging Face, Kaggle)? Add each to the `links` list in the frontmatter with kind `demo` or `other`.
+<!-- TODO: Will the current personal website stay online, or will this new site replace it? If it will be replaced, remove the personal-website link. -->
+<!-- The phone number from the CV is intentionally not included. -->
