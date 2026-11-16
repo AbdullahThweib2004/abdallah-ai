@@ -65,10 +65,32 @@ body {
 }
 
 /* One consistent, highly visible focus ring for every interactive element. */
-:where(a, button, summary, [tabindex]):focus-visible {
+:where(a, button, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 3px;
   border-radius: 6px;
+}
+/* Programmatic focus targets (e.g. a card heading) are not controls: no ring. */
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+/* Small label above a heading. Latin: mono, uppercase, tracked. Arabic is cursive, so it
+   uses the Arabic face at normal tracking and a slightly larger size instead. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.eyebrow:lang(ar) {
+  font-family: var(--font-arabic);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* Soft accent glow and a faint grid behind the hero. */

@@ -54,13 +54,23 @@ export const en = {
   },
   cards: {
     close: "Close",
+    // Decorative label above the card; the card's real heading comes from `titles`
+    // (or the project title for a project card).
+    eyebrows: {
+      show_project: "Project",
+      show_projects: "Portfolio",
+      show_skills: "Profile",
+      show_experience: "Profile",
+      show_education: "Profile",
+      show_contact: "Contact",
+    },
     titles: {
       show_project: "Project",
       show_projects: "All projects",
       show_skills: "Skills",
       show_experience: "Experience",
       show_education: "Education",
-      show_contact: "Contact",
+      show_contact: "Get in touch",
     },
     openProject: "Open project",
     allProjectsLink: "Browse all projects",

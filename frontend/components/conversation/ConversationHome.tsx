@@ -71,6 +71,8 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
   const showChips = !lastUser || lastAssistant?.role !== "assistant" || lastAssistant.kind === "noMatch";
   const subtitle = lastAssistant?.role === "assistant" ? lastAssistant : null;
   const cardOpen = card !== null;
+  const cardProject =
+    card?.type === "show_project" ? projects?.find((project) => project.id === card.project_id) : undefined;
   // On mobile the card is a bottom sheet; everything except the avatar sits underneath it.
   const underSheet = cardOpen ? "max-lg:hidden" : "";
 
@@ -129,7 +131,9 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
 
       {card && (
         <CardPanel
-          title={t.cards.titles[card.type]}
+          eyebrow={t.cards.eyebrows[card.type]}
+          heading={cardProject?.title ?? t.cards.titles[card.type]}
+          headingLang={cardProject ? "en" : undefined}
           closeLabel={t.cards.close}
           onClose={closeCard}
           headingRef={headingRef}

@@ -24,7 +24,7 @@ export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }
             <dl className="divide-y divide-ink-800 rounded-2xl border border-ink-700 bg-ink-900">
               {facts.map((fact) => (
                 <div key={fact.label} className="flex flex-col gap-1 px-5 py-4">
-                  <dt className="font-mono text-xs uppercase tracking-[0.18em] text-mist-400">{fact.label}</dt>
+                  <dt className="eyebrow text-mist-400">{fact.label}</dt>
                   <EnglishContent as="dd" className="text-mist-50">
                     {fact.value}
                   </EnglishContent>
@@ -34,7 +34,7 @@ export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }
           )}
           {profile.ways_of_working && (
             <div>
-              <h3 className="mb-2 font-mono text-xs uppercase tracking-[0.18em] text-mist-400">
+              <h3 className="mb-2 eyebrow text-mist-400">
                 {t.profile.waysOfWorking}
               </h3>
               <EnglishContent as="p" className="text-sm leading-relaxed text-mist-200">
@@ -66,7 +66,7 @@ export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }
           <EnglishContent className="grid gap-6 sm:grid-cols-2">
             {profile.career_direction.map((item) => (
               <div key={item.heading} className="rounded-2xl border border-ink-700 bg-ink-900 p-6">
-                <h3 className="font-mono text-xs uppercase tracking-[0.18em] text-accent">{item.heading}</h3>
+                <h3 className="eyebrow text-accent">{item.heading}</h3>
                 <Markdown className="mt-3 text-sm">{item.body_markdown}</Markdown>
               </div>
             ))}

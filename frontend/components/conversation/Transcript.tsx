@@ -39,7 +39,7 @@ export function Transcript({ t, messages, lastUser, assistantText, open, onToggl
           aria-label={t.conversation.historyTitle}
           className="absolute inset-x-0 bottom-full z-20 mb-3 max-h-[45dvh] overflow-y-auto rounded-2xl border border-ink-700 bg-ink-900 p-4 shadow-2xl"
         >
-          <h2 className="mb-3 font-mono text-xs uppercase tracking-[0.18em] text-mist-400">
+          <h2 className="mb-3 eyebrow text-mist-400">
             {t.conversation.historyTitle}
           </h2>
           <ol className="space-y-3 text-sm">

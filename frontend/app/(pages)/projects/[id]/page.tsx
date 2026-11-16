@@ -65,7 +65,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
 
       <header className="lab-backdrop -mx-4 mt-8 rounded-3xl px-4 py-10 sm:mx-0 sm:border sm:border-ink-800 sm:px-10">
         <EnglishContent>
-          <p className="font-mono text-xs uppercase tracking-[0.25em] text-accent">{project.id}</p>
+          <p className="eyebrow text-accent">{project.id}</p>
           <h1 className="mt-4 max-w-4xl text-4xl font-semibold leading-tight tracking-tight text-mist-50 sm:text-5xl">
             {project.title}
           </h1>

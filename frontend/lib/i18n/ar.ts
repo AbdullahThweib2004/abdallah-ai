@@ -56,13 +56,21 @@ export const ar: Dictionary = {
   },
   cards: {
     close: "إغلاق",
+    eyebrows: {
+      show_project: "مشروع",
+      show_projects: "معرض الأعمال",
+      show_skills: "الملف الشخصي",
+      show_experience: "الملف الشخصي",
+      show_education: "الملف الشخصي",
+      show_contact: "التواصل",
+    },
     titles: {
       show_project: "مشروع",
       show_projects: "جميع المشاريع",
       show_skills: "المهارات",
       show_experience: "الخبرة",
       show_education: "التعليم",
-      show_contact: "التواصل",
+      show_contact: "طرق التواصل",
     },
     openProject: "فتح المشروع",
     allProjectsLink: "تصفح جميع المشاريع",

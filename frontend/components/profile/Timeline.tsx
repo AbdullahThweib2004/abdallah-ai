@@ -16,7 +16,7 @@ export function Timeline({ title, items }: { title?: string; items: ContentSecti
               aria-hidden="true"
               className="absolute -start-[29px] top-1.5 size-2.5 rounded-full border-2 border-ink-950 bg-accent"
             />
-            <ItemHeading className="font-mono text-xs uppercase tracking-[0.18em] text-accent">
+            <ItemHeading className="eyebrow text-accent">
               {item.heading}
             </ItemHeading>
             <Markdown className="mt-2 text-sm sm:text-base">{item.body_markdown}</Markdown>

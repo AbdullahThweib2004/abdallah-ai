@@ -10,15 +10,14 @@ export function ProjectCard({ project, t }: { project: ProjectSummary; t: Dictio
   return (
     <article className="space-y-5">
       <StatusBadge status={project.project_status} t={t} />
-      <EnglishContent>
-        <h3 className="text-2xl font-semibold leading-tight tracking-tight text-mist-50">{project.title}</h3>
-        {project.one_line_summary && (
-          <p className="mt-3 leading-relaxed text-mist-200">{project.one_line_summary}</p>
-        )}
-      </EnglishContent>
+      {project.one_line_summary && (
+        <EnglishContent as="p" className="leading-relaxed text-mist-200">
+          {project.one_line_summary}
+        </EnglishContent>
+      )}
       {project.technologies.length > 0 && (
         <div>
-          <h4 className="mb-2 font-mono text-xs uppercase tracking-[0.18em] text-mist-400">{t.projects.technologies}</h4>
+          <h3 className="eyebrow mb-2 text-mist-400">{t.projects.technologies}</h3>
           <TechChips items={project.technologies} limit={6} moreLabel={t.projects.moreTech} />
         </div>
       )}

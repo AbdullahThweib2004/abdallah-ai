@@ -17,7 +17,7 @@ export function ProjectSidebar({ project, statusNote, t, locale }: Props) {
   return (
     <aside className="space-y-8 rounded-2xl border border-ink-700 bg-ink-900 p-6 lg:sticky lg:top-24">
       <div>
-        <h2 className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-mist-400">{t.projects.status}</h2>
+        <h2 className="mb-3 eyebrow text-mist-400">{t.projects.status}</h2>
         <StatusBadge status={project.project_status} t={t} />
         {statusNote && (
           <EnglishContent className="mt-3 text-sm">
@@ -28,7 +28,7 @@ export function ProjectSidebar({ project, statusNote, t, locale }: Props) {
 
       {project.technologies.length > 0 && (
         <div>
-          <h2 className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-mist-400">
+          <h2 className="mb-3 eyebrow text-mist-400">
             {t.projects.technologies}
           </h2>
           <TechChips items={project.technologies} />
