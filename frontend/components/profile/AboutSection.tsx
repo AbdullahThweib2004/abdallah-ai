@@ -48,13 +48,13 @@ export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }
       <div className="mt-20 grid gap-16 lg:grid-cols-2">
         {profile.experience && (
           <section aria-labelledby="experience">
-            <SectionHeading id="experience" index="03" title={t.sections.experience} />
+            <SectionHeading id="experience" index="02" title={t.sections.experience} />
             <Timeline title={profile.experience.title} items={profile.experience.sections} />
           </section>
         )}
         {profile.education.length > 0 && (
           <section aria-labelledby="education">
-            <SectionHeading id="education" index="04" title={t.sections.education} />
+            <SectionHeading id="education" index="03" title={t.sections.education} />
             <Timeline items={profile.education} />
           </section>
         )}
@@ -62,7 +62,7 @@ export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }
 
       {profile.career_direction.length > 0 && (
         <section aria-labelledby="direction" className="mt-20">
-          <SectionHeading id="direction" index="05" title={t.sections.direction} />
+          <SectionHeading id="direction" index="04" title={t.sections.direction} />
           <EnglishContent className="grid gap-6 sm:grid-cols-2">
             {profile.career_direction.map((item) => (
               <div key={item.heading} className="rounded-2xl border border-ink-700 bg-ink-900 p-6">

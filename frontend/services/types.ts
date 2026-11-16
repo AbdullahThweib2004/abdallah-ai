@@ -58,3 +58,15 @@ export type ContactLink = {
 export type ContactResponse = {
   links: ContactLink[];
 };
+
+// UI actions the conversation can request (spec §11 allowlist). From step 6 the backend
+// validates these against known ids; the frontend only ever renders them as cards.
+export type UiAction =
+  | { type: "show_project"; project_id: string }
+  | { type: "show_projects" }
+  | { type: "show_skills" }
+  | { type: "show_experience" }
+  | { type: "show_education" }
+  | { type: "show_contact" };
+
+export type CardType = UiAction["type"];

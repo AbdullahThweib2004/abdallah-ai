@@ -1,7 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic } from "next/font/google";
 
-import { SiteFooter } from "@/components/ui/SiteFooter";
 import { SiteHeader } from "@/components/ui/SiteHeader";
 import { directionOf, getDictionary } from "@/lib/i18n/config";
 import { getLocale } from "@/lib/i18n/server";
@@ -18,6 +17,12 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 
 // The language cookie is read for every request, so routes render at request time.
 export const instant = false;
+
+// `viewport-fit=cover` exposes the safe-area insets used by the one-screen home page.
+export const viewport: Viewport = {
+  viewportFit: "cover",
+  themeColor: "#0a0b0d",
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = getDictionary(await getLocale());
@@ -55,7 +60,6 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <main id="main" className="flex-1">
           {children}
         </main>
-        <SiteFooter t={t} />
       </body>
     </html>
   );

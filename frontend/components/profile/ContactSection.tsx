@@ -16,9 +16,9 @@ function displayUrl(url: string): string {
 
 export function ContactSection({ links, t }: { links: ContactLink[]; t: Dictionary }) {
   return (
-    <>
-      <p className="mb-8 text-mist-200">{t.contact.intro}</p>
-      <ul className="grid gap-4 sm:grid-cols-3">
+    <div className="@container">
+      <p className="mb-6 text-mist-200">{t.contact.intro}</p>
+      <ul className="grid gap-4 @2xl:grid-cols-3">
         {links.map((link) => {
           const external = link.kind !== "email";
           return (
@@ -43,6 +43,6 @@ export function ContactSection({ links, t }: { links: ContactLink[]; t: Dictiona
           );
         })}
       </ul>
-    </>
+    </div>
   );
 }

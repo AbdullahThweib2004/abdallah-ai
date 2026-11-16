@@ -13,7 +13,7 @@ export function ProjectCard({ project, t }: { project: ProjectSummary; t: Dictio
   return (
     <article
       aria-labelledby={titleId}
-      className="group relative flex flex-col rounded-2xl border border-ink-700 bg-ink-900 p-6 transition-colors hover:border-accent/50 focus-within:border-accent/50"
+      className="group relative flex w-full flex-col rounded-2xl border border-ink-700 bg-ink-900 p-6 transition-colors hover:border-accent/50 focus-within:border-accent/50"
     >
       <div className="mb-4 flex items-center justify-between gap-3">
         <StatusBadge status={project.project_status} t={t} />

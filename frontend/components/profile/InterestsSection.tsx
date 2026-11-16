@@ -3,11 +3,11 @@ import type { Profile } from "@/services/types";
 
 export function InterestsSection({ interests }: { interests: Profile["interests"] }) {
   return (
-    <EnglishContent>
+    <EnglishContent className="@container">
       {interests.summary && (
         <p className="max-w-3xl text-base leading-relaxed text-mist-200 sm:text-lg">{interests.summary}</p>
       )}
-      <ul className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="mt-8 grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
         {interests.items.map((item) => (
           <li
             key={item}

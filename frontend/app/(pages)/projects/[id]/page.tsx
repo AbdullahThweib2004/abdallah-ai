@@ -34,7 +34,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
 
   const backLink = (
     <Link
-      href="/#projects"
+      href="/projects"
       className="inline-flex items-center gap-2 text-sm text-mist-400 transition-colors hover:text-mist-50"
     >
       <span aria-hidden="true" className="rtl:rotate-180">
@@ -73,6 +73,15 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
             <p className="mt-5 max-w-3xl text-lg leading-relaxed text-mist-200">{project.one_line_summary}</p>
           )}
         </EnglishContent>
+        <Link
+          href={`/?ask=${project.id}`}
+          className="mt-8 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-strong"
+        >
+          {t.pages.askAboutProject}
+          <span aria-hidden="true" className="rtl:rotate-180">
+            →
+          </span>
+        </Link>
       </header>
 
       <div className="mt-12 grid gap-12 lg:grid-cols-[1fr_320px]">

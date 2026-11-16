@@ -6,16 +6,15 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 
 export function SiteHeader({ t, locale }: { t: Dictionary; locale: Locale }) {
   const links = [
-    { href: "/#projects", label: t.nav.projects },
-    { href: "/#about", label: t.nav.about },
-    { href: "/#skills", label: t.nav.skills },
-    { href: "/#contact", label: t.nav.contact },
+    { href: "/projects", label: t.nav.projects },
+    { href: "/about", label: t.nav.about },
+    { href: "/?card=contact", label: t.nav.contact },
   ];
   const languageNames = { en: t.language.en, ar: t.language.ar };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-ink-800/80 bg-ink-950/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-40 h-[var(--header-height)] border-b border-ink-800/80 bg-ink-950/80 backdrop-blur-md">
+      <div className="mx-auto flex h-full max-w-6xl items-center gap-6 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight text-mist-50">
           <span aria-hidden="true" className="grid size-7 place-items-center rounded-lg bg-accent font-mono text-sm text-accent-ink">
             A
