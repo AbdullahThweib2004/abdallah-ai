@@ -1,14 +1,14 @@
-# Abdullah AI – Interactive Voice Portfolio
+# Abdallah AI – Interactive Voice Portfolio
 
-> Don't just visit Abdullah's portfolio. Talk to Abdullah.
+> Don't just visit Abdallah's portfolio. Talk to Abdallah.
 
-Abdullah AI is an interactive portfolio website. Visitors can talk, by text and later by voice,
-with an AI-powered digital representative of Abdullah. The representative answers from a verified
+Abdallah AI is an interactive portfolio website. Visitors can talk, by text and later by voice,
+with an AI-powered digital representative of Abdallah. The representative answers from a verified
 knowledge base, speaks with an authorized voice, and appears as a realistic animated avatar. It is
-clearly labelled as AI and never claims to be the real Abdullah.
+clearly labelled as AI and never claims to be the real Abdallah.
 
 The project is built in stages, starting on a small budget. **Current stage: 2 – Knowledge base**: content
-templates for Abdullah to fill in, plus a strict validator. There are no AI features yet. See [`CLAUDE.md`](CLAUDE.md) for the full build
+templates for Abdallah to fill in, plus a strict validator. There are no AI features yet. See [`CLAUDE.md`](CLAUDE.md) for the full build
 order and project rules, and [`docs/`](docs/) for the architecture, API and requirements.
 
 ## Repository layout
@@ -16,7 +16,7 @@ order and project rules, and [`docs/`](docs/) for the architecture, API and requ
 ```
 frontend/         Next.js (App Router, TypeScript, Tailwind)
 backend/          FastAPI app (uv-managed, Python 3.12+)
-knowledge_base/   Verified Markdown content about Abdullah (source of truth for RAG)
+knowledge_base/   Verified Markdown content about Abdallah (source of truth for RAG)
 docs/             Specification, architecture, API and requirements
 ```
 

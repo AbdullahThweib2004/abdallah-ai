@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Abdullah AI",
-  description: "Don't just visit Abdullah's portfolio. Talk to Abdullah.",
+  title: "Abdallah AI",
+  description: "Don't just visit Abdallah's portfolio. Talk to Abdallah.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

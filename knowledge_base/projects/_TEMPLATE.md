@@ -40,7 +40,7 @@ TODO: What problem does it solve, and why does that problem matter?
 
 TODO: Who is it for? Who used it, or who would use it?
 
-## Abdullah's contribution
+## Abdallah's contribution
 
 TODO: What exactly did you build yourself vs. the team? Be specific. Was this a solo, team, university, or employer project?
 

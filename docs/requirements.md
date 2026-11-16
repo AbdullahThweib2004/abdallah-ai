@@ -8,13 +8,13 @@ Priorities: **P0** = essential for the first public release, **P1** = important,
 
 | ID | Requirement | Priority | Acceptance summary |
 |---|---|---|---|
-| FR-01 | Display Abdullah's avatar | P0 | Avatar and welcome experience render on supported browsers. |
+| FR-01 | Display Abdallah's avatar | P0 | Avatar and welcome experience render on supported browsers. |
 | FR-02 | Text conversation | P0 | Visitor can send a message and receive an AI response. |
 | FR-03 | Knowledge-grounded answers | P0 | Answers use approved profile and project information. |
 | FR-04 | Arabic and English | P0 | Text conversations work in both languages. |
 | FR-05 | Voice input / STT | P1 | Visitor can speak and receive a transcription. |
 | FR-06 | Voice output / TTS | P1 | AI response is played as audio. |
-| FR-07 | Abdullah voice identity | P1 | Authorized voice model produces a sufficiently similar voice. |
+| FR-07 | Abdallah voice identity | P1 | Authorized voice model produces a sufficiently similar voice. |
 | FR-08 | Animated talking avatar | P1 | Mouth motion is acceptably synchronized with generated speech. |
 | FR-09 | Project display actions | P0 | AI can request a permitted project card to be shown. |
 | FR-10 | Session context | P0 | Follow-up questions refer to earlier turns in the same session. |

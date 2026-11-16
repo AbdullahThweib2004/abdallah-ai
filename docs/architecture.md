@@ -47,7 +47,7 @@ FRONTEND AUDIO + SYNCHRONIZED AVATAR + PROJECT UI
 |---|---|---|
 | Frontend | Next.js (App Router), React, TypeScript, Tailwind | Layout, conversation controls, audio capture/playback, avatar display, project cards, responsive UI, RTL support |
 | Backend | Python, FastAPI, Pydantic | Session handling, request validation, rate limits, orchestration, action allowlist, provider adapters |
-| Knowledge | Markdown in `knowledge_base/` (source of truth), ChromaDB (vectors) | Approved, reviewed facts about Abdullah and his projects |
+| Knowledge | Markdown in `knowledge_base/` (source of truth), ChromaDB (vectors) | Approved, reviewed facts about Abdallah and his projects |
 | Storage | SQLite (local dev), PostgreSQL later if needed | Sessions, project catalogue, approved links |
 
 ### Backend module map (`backend/app/`)

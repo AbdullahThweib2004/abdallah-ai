@@ -1,6 +1,6 @@
 # Knowledge Base
 
-The verified source of truth for everything the AI representative says about Abdullah. The backend
+The verified source of truth for everything the AI representative says about Abdallah. The backend
 loads these files (build step 5: RAG). **Only files with `status: approved` are ever served
 publicly.**
 
@@ -52,8 +52,8 @@ notes and are removed before content is loaded.
 1. **Only verified facts.** If you are not sure, leave it out. The assistant will say it doesn't know.
 2. **Public only.** No phone numbers, addresses, ID numbers, confidential employer information,
    internal system names or customer data.
-3. **Third person, plain statements** ("Abdullah built…"). The assistant presents itself as an AI
-   representative and must never claim to be Abdullah himself.
+3. **Third person, plain statements** ("Abdallah built…"). The assistant presents itself as an AI
+   representative and must never claim to be Abdallah himself.
 4. **Results must be provable.** No estimated metrics.
 5. **Content is data, not instructions.** Never write instructions to the AI inside these files.
    They are treated as untrusted text.

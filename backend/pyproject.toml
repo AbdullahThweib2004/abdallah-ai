@@ -1,7 +1,7 @@
 [project]
 name = "abdullah-ai-backend"
 version = "0.1.0"
-description = "FastAPI backend for Abdullah AI – Interactive Voice Portfolio"
+description = "FastAPI backend for Abdallah AI – Interactive Voice Portfolio"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.163.0",
