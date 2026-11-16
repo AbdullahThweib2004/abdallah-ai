@@ -28,3 +28,14 @@ def test_arabic_matching_ignores_diacritics_and_case() -> None:
 
 def test_empty_answer_fails() -> None:
     assert check({"language": "en"}, "  ") == ["empty answer"]
+
+
+def test_unicode_hyphens_and_spaces_match_plain_ones() -> None:
+    # gpt-oss writes "Al‑Quds" with U+2011 and puts U+202F before URLs.
+    assert check({"must_include_any": ["Al-Quds"]}, "He studied at Al\u2011Quds University.") == []
+
+
+def test_markdown_in_an_answer_fails() -> None:
+    assert check({}, "His best work is the **AI Developer Assistant**.") == ["uses markdown"]
+    assert check({}, "Highlights:\n- one\n- two") == ["uses markdown"]
+    assert check({}, "He wrote it in C++ and Python - a fast engine.") == []

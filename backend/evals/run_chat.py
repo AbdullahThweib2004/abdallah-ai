@@ -28,11 +28,18 @@ from app.services.language import detect_language
 
 CASES_FILE = Path(__file__).parent / "chat_cases.yaml"
 MAX_RATE_LIMIT_RETRIES = 6
-_DIACRITICS = re.compile(r"[ً-ٰٟـ]")
+_DIACRITICS = re.compile(r"[\u064B-\u065F\u0670\u0640]")
+_HYPHENS = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2212]")
+_SPACES = re.compile(r"[\u00A0\u202F\u2009\u200A]")
+# Answers are shown as subtitles and spoken later: no markdown of any kind (prompt rule).
+_MARKDOWN = re.compile(
+    r"\*\*|__|```|^\s*#{1,6}\s|^\s*[-*•]\s|^\s*\d+\.\s|^\s*\|.*\|\s*$", re.MULTILINE
+)
 
 
 def normalize(text: str) -> str:
-    return _DIACRITICS.sub("", text).casefold().replace("’", "'")
+    text = _SPACES.sub(" ", _HYPHENS.sub("-", _DIACRITICS.sub("", text)))
+    return text.casefold().replace("’", "'")
 
 
 @dataclass
@@ -43,6 +50,7 @@ class Result:
     usage: Usage = field(default_factory=Usage)
     latency_ms: int = 0
     answer: str = ""
+    rate_limit_hits: int = 0
 
 
 def check(case: dict, answer: str) -> list[str]:
@@ -59,6 +67,8 @@ def check(case: dict, answer: str) -> list[str]:
     for needle in case.get("must_not_include") or []:
         if normalize(needle) in text:
             reasons.append(f"contains forbidden {needle!r}")
+    if _MARKDOWN.search(answer):
+        reasons.append("uses markdown")
     return reasons
 
 
@@ -90,7 +100,9 @@ async def run_case(provider: LLMProvider, system_prompt: str, case: dict, settin
             )
         except LLMRateLimitError as exc:
             if attempt == MAX_RATE_LIMIT_RETRIES:
-                return Result(case["id"], False, ["rate limited (gave up)"])
+                return Result(
+                    case["id"], False, ["rate limited (gave up)"], rate_limit_hits=attempt + 1
+                )
             wait = exc.retry_after or min(60, 5 * 2**attempt)
             print(f"    429 on {case['id']}: waiting {wait:.0f}s (retry {attempt + 1})", flush=True)
             await asyncio.sleep(wait)
@@ -99,7 +111,7 @@ async def run_case(provider: LLMProvider, system_prompt: str, case: dict, settin
             return Result(case["id"], False, [f"error: {type(exc).__name__}: {exc}"])
         latency = round((time.perf_counter() - started) * 1000)
         reasons = check(case, answer)
-        return Result(case["id"], not reasons, reasons, usage, latency, answer)
+        return Result(case["id"], not reasons, reasons, usage, latency, answer, attempt)
     raise AssertionError("unreachable")
 
 
@@ -139,7 +151,7 @@ async def main() -> int:
     if knowledge is None:
         print("Knowledge base failed to load", file=sys.stderr)
         return 2
-    system_prompt = build_system_prompt(knowledge.documents)
+    system_prompt = build_system_prompt(knowledge.documents, settings.llm_knowledge_mode)
     provider = build_provider(settings)
 
     cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
@@ -148,6 +160,7 @@ async def main() -> int:
 
     print(
         f"Provider {provider.name}, model {provider.model}, {len(cases)} cases, "
+        f"knowledge mode {settings.llm_knowledge_mode}, "
         f"system prompt ~{estimate_tokens(system_prompt)} tokens (estimate)\n",
         flush=True,
     )
@@ -176,6 +189,8 @@ async def main() -> int:
     ) / 1_000_000
     print(
         f"\nPass rate: {passed}/{len(results)} = {passed / max(len(results), 1):.0%}"
+        f"\nRate limits: {sum(1 for r in results if r.rate_limit_hits)} case(s) hit 429, "
+        f"{sum(r.rate_limit_hits for r in results)} retry wait(s) in total"
         f"\nTokens: {total_in} in / {total_out} out"
         + (
             f" (avg {total_in // len(answered)} in / {total_out // len(answered)} out per question)"

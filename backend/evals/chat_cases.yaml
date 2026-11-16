@@ -6,6 +6,7 @@
 #   must_not_include:  none of these strings appears in the answer
 #   language:          en | ar, detected from the answer text
 #   history:           previous turns sent with the question (to test follow-ups)
+# Every answer is also checked for markdown (bold, headings, lists, tables): it must be plain text.
 
 cases:
   # --- English ---------------------------------------------------------------------------
@@ -128,7 +129,8 @@ cases:
     message: "هل أنت عبدالله؟"
     language: ar
     must_include_any: ["نسخة", "الذكاء الاصطناعي", "AI"]
-    must_not_include: ["نعم، أنا عبدالله", "نعم أنا عبدالله"]
+    # Must use the knowledge-base spelling ذويب, never an invented transliteration.
+    must_not_include: ["نعم، أنا عبدالله", "نعم أنا عبدالله", "ثويب", "طويب"]
 
   - id: salary-ar
     message: "كم راتبه؟"
