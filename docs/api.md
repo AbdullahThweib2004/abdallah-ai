@@ -97,8 +97,9 @@ Same fields as a list item, plus:
 
 ## `POST /api/v1/chat`
 
-Streams one answer from Abdallah AI. Until step 5 (RAG) the whole approved knowledge base is
-placed in the system prompt (`backend/app/agents/prompts/system_v1.md`). Cards are still chosen
+Streams one answer from Abdallah AI. Until step 5 (RAG) the approved knowledge base is placed in
+the system prompt (`backend/app/agents/prompts/system_v2.md`), in full or, with the temporary
+`LLM_KNOWLEDGE_MODE=compact`, in a shortened form that fits small tokens-per-minute limits. Cards are still chosen
 by the frontend's temporary keyword stub, not by the model (that arrives with step 6).
 
 Request (strict, unknown fields → 422):
@@ -129,7 +130,8 @@ Response: `text/event-stream`. Each event is `event: <name>` + `data: <json>`:
 | `done` | `{"usage": {"input_tokens": n, "output_tokens": n}, "latency_ms": n}` | last, on success |
 | `error` | `{"code": "unavailable" \| "timeout" \| "busy", "message": "…"}` | last, on failure; may follow some `token` events (keep the partial answer) |
 
-`error.message` is a friendly sentence in `ui_language` with no provider details. The server
+Token text is plain text: markdown emphasis and code marks (`*`, backticks) are stripped
+server-side. `error.message` is a friendly sentence in `ui_language` with no provider details. The server
 never hangs: if the provider sends nothing for `LLM_TIMEOUT_SECONDS`, the stream ends with
 `error` `timeout`.
 
