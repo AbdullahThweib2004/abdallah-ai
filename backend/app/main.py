@@ -35,8 +35,12 @@ def create_app(
         app.state.knowledge = knowledge
         # The vector index is rebuilt only when the approved knowledge (or model) changed.
         app.state.retriever = build_retriever(knowledge.documents, settings) if knowledge else None
-        app.state.identity = build_identity_context(
-            knowledge.profile if knowledge else None, knowledge.contact() if knowledge else None
+        app.state.identity = (
+            build_identity_context(
+                knowledge.profile, knowledge.contact(), knowledge.list_projects()
+            )
+            if knowledge
+            else ""
         )
 
         owned_provider = None

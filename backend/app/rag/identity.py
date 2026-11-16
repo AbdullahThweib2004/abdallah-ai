@@ -1,13 +1,18 @@
-"""Small, always-included identity context, so name/contact questions work even when
-retrieval is weak. Built from the profile and contact data (no hard-coded facts)."""
+"""Small, always-included identity context, so name/contact questions (and "list all his
+projects", which retrieval answers poorly) work even when retrieval is weak. Built from the
+profile, contact and project data (no hard-coded facts)."""
 
 from app.core.tokens import estimate_tokens
-from app.models.content import ContactResponse, ProfileResponse
+from app.models.content import ContactResponse, ProfileResponse, ProjectSummary
 
 MAX_IDENTITY_TOKENS = 300
 
 
-def build_identity_context(profile: ProfileResponse | None, contact: ContactResponse | None) -> str:
+def build_identity_context(
+    profile: ProfileResponse | None,
+    contact: ContactResponse | None,
+    projects: list[ProjectSummary] | None = None,
+) -> str:
     if profile is None:
         return ""
     name = profile.name + (f" (Arabic spelling: {profile.name_ar})" if profile.name_ar else "")
@@ -19,6 +24,8 @@ def build_identity_context(profile: ProfileResponse | None, contact: ContactResp
             f"{link.label}: {link.url.removeprefix('mailto:')}" for link in contact.links
         )
         lines.append(f"Public contact: {links}")
+    if projects:
+        lines.append(f"All projects ({len(projects)}): " + "; ".join(p.title for p in projects))
     # The first summary paragraph, shortened by sentences if needed to stay within budget.
     summary = profile.summary_markdown.split("\n\n")[0].strip()
     sentences = summary.split(". ")

@@ -180,9 +180,11 @@ def test_identity_context_is_small_and_complete(documents) -> None:
         ]
     )
 
-    identity = build_identity_context(profile, contact)
+    projects = KnowledgeService(documents).list_projects()
+    identity = build_identity_context(profile, contact, projects)
 
     assert "Name: Test Person (Arabic spelling: شخص)" in identity
+    assert "All projects (3): Gamma; Beta; Alpha" in identity  # approved only, featured first
     assert "Headline: Test Engineer" in identity
     assert "Email: t@example.com" in identity
     assert estimate_tokens(identity) <= MAX_IDENTITY_TOKENS
