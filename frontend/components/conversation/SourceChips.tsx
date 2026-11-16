@@ -13,18 +13,27 @@ const ABOUT_ANCHORS: Record<string, string> = {
   "public-links": "#contact",
 };
 
+const MAX_CHIPS = 4;
+
+/** "Nawa: Neural Network Inference Engine in C++" → "Nawa", so the heading stays visible. */
+function shortTitle(title: string): string {
+  return title.split(":")[0].trim();
+}
+
 function hrefFor(source: ChatSource): string {
   return source.project_id ? `/projects/${source.project_id}` : `/about${ABOUT_ANCHORS[source.doc_id] ?? ""}`;
 }
 
-/** "Title › heading" chips for the knowledge an answer was grounded on. */
+/** "Title › heading" chips for the knowledge an answer was grounded on (best first). */
 export function SourceChips({ sources, label }: { sources: ChatSource[]; label: string }) {
   if (sources.length === 0) return null;
+  const shown = sources.slice(0, MAX_CHIPS);
+  const hidden = sources.length - shown.length;
   return (
     <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
       <span className="eyebrow me-1 text-mist-400">{label}</span>
       <ul aria-label={label} className="contents">
-        {sources.map((source) => (
+        {shown.map((source) => (
           <li key={`${source.doc_id}-${source.heading}`}>
             <Link
               href={hrefFor(source)}
@@ -33,11 +42,16 @@ export function SourceChips({ sources, label }: { sources: ChatSource[]; label: 
               title={`${source.title} › ${source.heading}`}
               className="inline-block max-w-[16rem] truncate rounded-full border border-ink-700 bg-ink-900 px-2.5 py-0.5 align-middle text-xs text-mist-200 transition-colors hover:border-accent/60 hover:text-mist-50"
             >
-              {source.title} <span aria-hidden="true">›</span>
+              {shortTitle(source.title)} <span aria-hidden="true">›</span>
               <span className="sr-only">,</span> {source.heading}
             </Link>
           </li>
         ))}
+        {hidden > 0 && (
+          <li className="text-xs text-mist-400" title={sources.slice(MAX_CHIPS).map((s) => `${s.title} › ${s.heading}`).join("\n")}>
+            +{hidden}
+          </li>
+        )}
       </ul>
     </div>
   );
