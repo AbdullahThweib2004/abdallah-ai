@@ -70,3 +70,17 @@ export type UiAction =
   | { type: "show_contact" };
 
 export type CardType = UiAction["type"];
+
+// --- Chat (POST /api/v1/chat, Server-Sent Events) -------------------------------------------
+
+export type ChatLanguage = "en" | "ar";
+
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+export type ChatRequest = { message: string; history: ChatTurn[]; ui_language: ChatLanguage };
+
+export type ChatEvent =
+  | { type: "start"; request_id: string; language: ChatLanguage }
+  | { type: "token"; text: string }
+  | { type: "done"; usage: { input_tokens: number; output_tokens: number }; latency_ms: number }
+  | { type: "error"; code: "unavailable" | "timeout" | "busy"; message: string };

@@ -102,7 +102,8 @@ async def chat_events(
         status = "unavailable"
         logger.warning("chat request_id=%s provider error: %s", request_id, exc)
         yield error("unavailable")
-    except GeneratorExit:
+    except (GeneratorExit, asyncio.CancelledError):
+        # The visitor stopped or left: the provider stream is closed in `finally`.
         status = "client_disconnected"
         raise
     except Exception:

@@ -113,6 +113,11 @@ def write_fixture_kb(root: Path) -> Path:
 
 
 @pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture
 def fixture_kb(tmp_path: Path) -> Path:
     return write_fixture_kb(tmp_path / "knowledge_base")
 

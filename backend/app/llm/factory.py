@@ -10,7 +10,7 @@ def build_provider(settings: Settings) -> LLMProvider:
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
 
     if settings.llm_provider == "fake":
-        return FakeProvider()
+        return FakeProvider(delay=settings.llm_fake_delay_ms / 1000)
 
     if not settings.llm_model:
         raise LLMConfigError("LLM_MODEL is required")

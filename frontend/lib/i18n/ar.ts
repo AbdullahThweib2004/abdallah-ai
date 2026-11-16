@@ -48,10 +48,14 @@ export const ar: Dictionary = {
     assistant: "Abdallah AI",
     history: "السجل",
     historyTitle: "سجل المحادثة",
-    replies: {
-      related: "المحادثة المباشرة ستنطلق قريباً. في الأثناء، إليك ما يتعلق بسؤالك:",
-      noMatch: "المحادثة المباشرة ستنطلق قريباً. في الأثناء، جرّب أحد هذه الأسئلة:",
-      askProject: "المحادثة المباشرة ستنطلق قريباً. في الأثناء، إليك المشروع الذي سألت عنه:",
+    stop: "إيقاف",
+    stopped: "تم الإيقاف",
+    answerLabel: "إجابة Abdallah AI",
+    thinking: "Abdallah AI يفكّر…",
+    askAbout: "حدّثني عن مشروع {title}.",
+    errors: {
+      network: "تعذّر الوصول إلى Abdallah AI الآن. يرجى التحقق من الاتصال والمحاولة مرة أخرى.",
+      generic: "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
     },
   },
   cards: {

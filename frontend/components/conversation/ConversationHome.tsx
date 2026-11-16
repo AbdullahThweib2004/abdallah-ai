@@ -4,13 +4,14 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AvatarStage } from "@/components/avatar/AvatarStage";
-import { type Message, useConversation } from "@/hooks/useConversation";
+import { type AnswerMessage, type Message, useConversation } from "@/hooks/useConversation";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
 
+import { AnswerSubtitle } from "./AnswerSubtitle";
 import { CardBody, type CardData } from "./CardBody";
 import { CardPanel } from "./CardPanel";
 import { Composer } from "./Composer";
-import { actionFromParams } from "./deepLink";
+import { deepLinkFromParams } from "./deepLink";
 import { Subtitle } from "./Subtitle";
 import { SuggestionChips } from "./SuggestionChips";
 import { Transcript } from "./Transcript";
@@ -22,25 +23,32 @@ type Props = CardData & {
 };
 
 export function ConversationHome({ t, locale, profile, projects, contact, portraitSrc }: Props) {
-  const conversation = useConversation(projects ?? []);
-  const { card, messages, lastAssistant, lastUser, avatar, send, open, closeCard, spoken } = conversation;
+  const conversation = useConversation(projects ?? [], locale);
+  const { card, messages, lastAssistant, lastUser, avatar, streaming } = conversation;
+  const { send, stop, showCard, closeCard, spoken } = conversation;
   const [historyOpen, setHistoryOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // Deep links (`/?ask=<id>`, `/?card=contact`): applied once per distinct query string,
-  // then removed from the address bar so the same link works again later.
-  const searchParams = useSearchParams();
-  const query = searchParams.toString();
-  const [appliedQuery, setAppliedQuery] = useState("");
-  if (query !== appliedQuery) {
-    setAppliedQuery(query);
-    const action = actionFromParams(new URLSearchParams(query), projects);
-    if (action) open(action.card, action.kind);
-  }
+  // Deep links (`/?ask=<id>`, `/?card=contact`) are handled once, then removed from the
+  // address bar so following the same link again works.
+  const query = useSearchParams().toString();
+  const handledQuery = useRef<string | null>(null);
   useEffect(() => {
-    if (appliedQuery) window.history.replaceState(null, "", "/");
-  }, [appliedQuery]);
+    if (!query) {
+      handledQuery.current = null;
+      return;
+    }
+    if (handledQuery.current === query) return;
+    handledQuery.current = query;
+    window.history.replaceState(null, "", "/");
+    const link = deepLinkFromParams(new URLSearchParams(query), projects);
+    if (link?.kind === "card") showCard(link.card);
+    if (link?.kind === "ask") {
+      const question = t.conversation.askAbout.replace("{title}", link.project.title);
+      void send(question, { type: "show_project", project_id: link.project.id });
+    }
+  }, [query, projects, send, showCard, t.conversation.askAbout]);
 
   // Focus moves into the card when it opens and back to the composer when it closes.
   const previousCard = useRef(card);
@@ -61,15 +69,20 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [card, historyOpen, closeCard]);
 
+  function errorText(answer: AnswerMessage): string | null {
+    if (!answer.error) return null;
+    if (answer.error.kind === "server") return answer.error.message;
+    return answer.error.kind === "network" ? t.conversation.errors.network : t.conversation.errors.generic;
+  }
+
   function assistantText(message: Extract<Message, { role: "assistant" }>): string {
     if (message.kind === "greeting") {
       return (locale === "ar" ? profile?.intro.ar : profile?.intro.en) ?? t.tagline;
     }
-    return t.conversation.replies[message.kind];
+    const suffix = message.status === "stopped" ? ` (${t.conversation.stopped})` : "";
+    return [message.text + suffix, errorText(message)].filter(Boolean).join(" ") || "…";
   }
 
-  const showChips = !lastUser || lastAssistant?.role !== "assistant" || lastAssistant.kind === "noMatch";
-  const subtitle = lastAssistant?.role === "assistant" ? lastAssistant : null;
   const cardOpen = card !== null;
   const cardProject =
     card?.type === "show_project" ? projects?.find((project) => project.id === card.project_id) : undefined;
@@ -83,6 +96,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
     >
       <section
         aria-label={t.conversation.regionLabel}
+        aria-busy={streaming}
         className={`stage-shift flex h-full flex-col ${cardOpen ? "max-lg:pb-[58dvh] lg:pe-[calc(var(--panel-width)+2rem)]" : ""}`}
       >
         <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6">
@@ -95,21 +109,29 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
           </div>
 
           <div className={`shrink-0 space-y-4 pt-4 ${underSheet}`}>
-            {subtitle && (
+            {lastAssistant?.role === "assistant" && lastAssistant.kind === "greeting" && (
               <Subtitle
-                key={`${subtitle.id}-${locale}`}
-                text={assistantText(subtitle)}
+                key={`greeting-${locale}`}
+                text={assistantText(lastAssistant)}
                 lang={locale}
                 dir={directionOf(locale)}
                 onDone={spoken}
               />
             )}
+            {lastAssistant?.role === "assistant" && lastAssistant.kind === "answer" && (
+              <AnswerSubtitle
+                answer={lastAssistant}
+                errorText={errorText(lastAssistant)}
+                t={t}
+                fallbackLang={locale}
+              />
+            )}
 
-            {showChips && (
+            {!lastUser && (
               <SuggestionChips
                 label={t.conversation.suggestionsLabel}
                 suggestions={t.conversation.suggestions}
-                onPick={send}
+                onPick={(text) => void send(text)}
               />
             )}
 
@@ -122,7 +144,13 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
               onToggle={() => setHistoryOpen((value) => !value)}
             />
 
-            <Composer t={t} onSend={send} inputRef={inputRef} />
+            <Composer
+              t={t}
+              onSend={(text) => void send(text)}
+              streaming={streaming}
+              onStop={stop}
+              inputRef={inputRef}
+            />
 
             <p className="text-center text-xs text-mist-400">{t.conversation.transparency}</p>
           </div>

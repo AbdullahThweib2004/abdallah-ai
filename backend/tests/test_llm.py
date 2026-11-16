@@ -14,11 +14,6 @@ from app.llm.openai_compatible import OpenAICompatibleProvider
 pytestmark = pytest.mark.anyio
 
 
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
-
-
 MESSAGES = [{"role": "system", "content": "rules"}, {"role": "user", "content": "hi"}]
 
 

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # --- LLM (see app/llm). The default `fake` provider needs no key. ---
     llm_provider: Literal["fake", "openai_compatible", "anthropic"] = "fake"
+    # Delay between fake tokens, to demo/test streaming and Stop without a real model.
+    llm_fake_delay_ms: int = Field(default=0, ge=0, le=2000)
     llm_base_url: str | None = None
     llm_api_key: SecretStr | None = None
     llm_model: str | None = None

@@ -46,10 +46,15 @@ export const en = {
     assistant: "Abdallah AI",
     history: "History",
     historyTitle: "Conversation history",
-    replies: {
-      related: "Live conversation is launching soon. Meanwhile, here's what's related:",
-      noMatch: "Live conversation is launching soon. Meanwhile, try one of these questions:",
-      askProject: "Live conversation is launching soon. Meanwhile, here's the project you asked about:",
+    stop: "Stop",
+    stopped: "Stopped",
+    answerLabel: "Abdallah AI's answer",
+    thinking: "Abdallah AI is thinking…",
+    // Sent as the visitor's question when they arrive via "Ask Abdallah AI about this project".
+    askAbout: "Tell me about the {title} project.",
+    errors: {
+      network: "Can't reach Abdallah AI right now. Please check your connection and try again.",
+      generic: "Something went wrong. Please try again.",
     },
   },
   cards: {

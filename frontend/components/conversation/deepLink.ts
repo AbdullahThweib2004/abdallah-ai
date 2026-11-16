@@ -1,4 +1,3 @@
-import type { AssistantKind } from "@/hooks/useConversation";
 import type { ProjectSummary, UiAction } from "@/services/types";
 
 // `/?card=<name>` values that may open a card; anything else is ignored.
@@ -10,16 +9,16 @@ const CARD_PARAMS: Record<string, UiAction> = {
   contact: { type: "show_contact" },
 };
 
-/** Validate `?ask=<project_id>` / `?card=<name>` against known ids before opening anything. */
-export function actionFromParams(
-  params: URLSearchParams,
-  projects: ProjectSummary[] | null,
-): { card: UiAction; kind?: AssistantKind } | null {
+export type DeepLink =
+  | { kind: "ask"; project: ProjectSummary } // `/?ask=<project_id>`: open the card and ask about it
+  | { kind: "card"; card: UiAction }; // `/?card=<name>`: open the card only
+
+/** Validate `?ask=<project_id>` / `?card=<name>` against known ids before acting on them. */
+export function deepLinkFromParams(params: URLSearchParams, projects: ProjectSummary[] | null): DeepLink | null {
   const ask = params.get("ask");
-  if (ask && projects?.some((project) => project.id === ask)) {
-    return { card: { type: "show_project", project_id: ask }, kind: "askProject" };
-  }
+  const project = ask ? projects?.find((p) => p.id === ask) : undefined;
+  if (project) return { kind: "ask", project };
   const card = params.get("card");
-  if (card && Object.hasOwn(CARD_PARAMS, card)) return { card: CARD_PARAMS[card] };
+  if (card && Object.hasOwn(CARD_PARAMS, card)) return { kind: "card", card: CARD_PARAMS[card] };
   return null;
 }

@@ -9,10 +9,13 @@ const NOTICE_MS = 4000;
 type Props = {
   t: Dictionary;
   onSend: (text: string) => void;
+  /** While an answer streams, the send button becomes a Stop button. */
+  streaming: boolean;
+  onStop: () => void;
   inputRef: Ref<HTMLInputElement>;
 };
 
-export function Composer({ t, onSend, inputRef }: Props) {
+export function Composer({ t, onSend, streaming, onStop, inputRef }: Props) {
   const [value, setValue] = useState("");
   const [voiceNotice, setVoiceNotice] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -21,7 +24,7 @@ export function Composer({ t, onSend, inputRef }: Props) {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!value.trim()) return;
+    if (streaming || !value.trim()) return;
     onSend(value);
     setValue("");
   }
@@ -72,14 +75,26 @@ export function Composer({ t, onSend, inputRef }: Props) {
             <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
           </svg>
         </button>
+        {/* One element for both roles so keyboard focus survives the switch. */}
         <button
-          type="submit"
-          aria-label={t.conversation.send}
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition-colors hover:bg-accent-strong"
+          type={streaming ? "button" : "submit"}
+          onClick={streaming ? onStop : undefined}
+          aria-label={streaming ? t.conversation.stop : t.conversation.send}
+          className={`grid size-10 shrink-0 place-items-center rounded-full transition-colors ${
+            streaming
+              ? "border border-accent/60 bg-ink-800 text-accent hover:bg-ink-700"
+              : "bg-accent text-accent-ink hover:bg-accent-strong"
+          }`}
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 rtl:-scale-x-100" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          {streaming ? (
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+          ) : (
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 rtl:-scale-x-100" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
         </button>
       </form>
     </div>

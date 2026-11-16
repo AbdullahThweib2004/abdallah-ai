@@ -1,5 +1,6 @@
 """POST /api/v1/chat with the FakeProvider (no network)."""
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -11,9 +12,12 @@ from fastapi.testclient import TestClient
 from app.llm.base import LLMRateLimitError, LLMUnavailableError
 from app.llm.fake import FakeProvider
 from app.llm.openai_compatible import OpenAICompatibleProvider
+from app.models.chat import ChatRequest
 from app.services.chat_messages import MESSAGES
+from app.services.chat_service import chat_events
 from app.services.language import detect_language
 from app.services.rate_limit import InMemoryRateLimiter
+from tests.conftest import make_settings
 
 URL = "/api/v1/chat"
 SECRET_KEY = "placeholder-chat-credential"
@@ -324,3 +328,30 @@ def test_message_text_is_not_logged(
 
     assert "7781" not in caplog.text
     assert "status=ok" in caplog.text and "output_tokens=" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_client_disconnect_closes_provider_stream_and_is_logged(
+    fixture_kb: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    provider = FakeProvider(delay=0.05)
+    stream = chat_events(
+        "req-1",
+        ChatRequest(message="hi"),
+        provider=provider,
+        system_prompt="rules",
+        settings=make_settings(fixture_kb),
+    )
+
+    async def consume() -> None:
+        async for _ in stream:
+            pass
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.12)  # a couple of tokens in
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "request_id=req-1" in caplog.text and "status=client_disconnected" in caplog.text
