@@ -47,6 +47,7 @@ export const en = {
     history: "History",
     historyTitle: "Conversation history",
     stop: "Stop",
+    sources: "Sources",
     stopped: "Stopped",
     answerLabel: "Abdallah AI's answer",
     thinking: "Abdallah AI is thinking…",

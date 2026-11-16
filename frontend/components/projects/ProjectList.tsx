@@ -21,7 +21,7 @@ export function ProjectList({ projects, t }: { projects: ProjectSummary[]; t: Di
                 <span className="mt-1 block truncate text-sm text-mist-400">{project.one_line_summary}</span>
               )}
             </EnglishContent>
-            <span className="flex shrink-0 items-center gap-3">
+            <span className="flex shrink-0 items-center gap-3 sm:w-40 sm:justify-end">
               <StatusBadge status={project.project_status} t={t} />
               <span aria-hidden="true" className="text-mist-400 transition-colors group-hover:text-accent rtl:rotate-180">
                 →

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import { matchIntent } from "@/lib/conversation/localIntentStub";
 import { ChatHttpError, streamChat } from "@/services/chatStream";
-import type { ChatLanguage, ChatTurn, ProjectSummary, UiAction } from "@/services/types";
+import type { ChatLanguage, ChatSource, ChatTurn, ProjectSummary, UiAction } from "@/services/types";
 
 export type AvatarState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -27,6 +27,7 @@ export type Message =
       status: AnswerStatus;
       language: ChatLanguage | null;
       error: AnswerError | null;
+      sources: ChatSource[];
     };
 
 export type AnswerMessage = Extract<Message, { kind: "answer" }>;
@@ -37,7 +38,13 @@ type Event =
   | { type: "ask"; userId: number; answerId: number; text: string; card: UiAction | null }
   | { type: "start"; id: number; language: ChatLanguage }
   | { type: "token"; id: number; text: string }
-  | { type: "finish"; id: number; status: Exclude<AnswerStatus, "streaming">; error?: AnswerError }
+  | {
+      type: "finish";
+      id: number;
+      status: Exclude<AnswerStatus, "streaming">;
+      error?: AnswerError;
+      sources?: ChatSource[];
+    }
   | { type: "showCard"; card: UiAction }
   | { type: "spoken" }
   | { type: "closeCard" };
@@ -65,6 +72,7 @@ function reducer(state: State, event: Event): State {
             status: "streaming",
             language: null,
             error: null,
+            sources: [],
           },
         ],
         avatar: "thinking", // until the first token
@@ -83,7 +91,9 @@ function reducer(state: State, event: Event): State {
         ...state,
         avatar: "idle",
         messages: updateAnswer(state, event.id, (m) =>
-          m.status === "streaming" ? { ...m, status: event.status, error: event.error ?? null } : m,
+          m.status === "streaming"
+            ? { ...m, status: event.status, error: event.error ?? null, sources: event.sources ?? [] }
+            : m,
         ),
       };
     case "showCard":
@@ -145,7 +155,7 @@ export function useConversation(projects: ProjectSummary[], uiLanguage: ChatLang
         for await (const event of streamChat({ message, history, ui_language: uiLanguage }, controller.signal)) {
           if (event.type === "start") dispatch({ type: "start", id, language: event.language });
           else if (event.type === "token") dispatch({ type: "token", id, text: event.text });
-          else if (event.type === "done") dispatch({ type: "finish", id, status: "done" });
+          else if (event.type === "done") dispatch({ type: "finish", id, status: "done", sources: event.sources });
           else if (event.type === "error") {
             dispatch({ type: "finish", id, status: "error", error: { kind: "server", message: event.message } });
           }

@@ -49,6 +49,7 @@ export const ar: Dictionary = {
     history: "السجل",
     historyTitle: "سجل المحادثة",
     stop: "إيقاف",
+    sources: "المصادر",
     stopped: "تم الإيقاف",
     answerLabel: "إجابة Abdallah AI",
     thinking: "Abdallah AI يفكّر…",

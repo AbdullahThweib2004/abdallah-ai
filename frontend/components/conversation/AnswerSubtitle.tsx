@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 import type { AnswerMessage } from "@/hooks/useConversation";
 import type { Dictionary } from "@/lib/i18n/config";
 
+import { SourceChips } from "./SourceChips";
+
 type Props = { answer: AnswerMessage; errorText: string | null; t: Dictionary; fallbackLang: string };
 
 /**
@@ -63,6 +65,7 @@ export function AnswerSubtitle({ answer, errorText, t, fallbackLang }: Props) {
           <p className="mt-1 text-xs text-mist-400">— {t.conversation.stopped}</p>
         )}
         {errorText && <p className="mt-1 text-sm text-accent">{errorText}</p>}
+        {finished && <SourceChips sources={answer.sources} label={t.conversation.sources} />}
       </div>
       <p aria-live="polite" className="sr-only">
         {finished ? announcement : ""}

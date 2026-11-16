@@ -79,8 +79,16 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 export type ChatRequest = { message: string; history: ChatTurn[]; ui_language: ChatLanguage };
 
+/** A knowledge-base section the answer was grounded on (from the `done` event). */
+export type ChatSource = { doc_id: string; title: string; heading: string; project_id?: string };
+
 export type ChatEvent =
   | { type: "start"; request_id: string; language: ChatLanguage }
   | { type: "token"; text: string }
-  | { type: "done"; usage: { input_tokens: number; output_tokens: number }; latency_ms: number }
+  | {
+      type: "done";
+      usage: { input_tokens: number; output_tokens: number };
+      latency_ms: number;
+      sources: ChatSource[];
+    }
   | { type: "error"; code: "unavailable" | "timeout" | "busy"; message: string };

@@ -3,6 +3,8 @@
 import type { Message } from "@/hooks/useConversation";
 import type { Dictionary } from "@/lib/i18n/config";
 
+import { SourceChips } from "./SourceChips";
+
 type Props = {
   t: Dictionary;
   messages: Message[];
@@ -51,6 +53,11 @@ export function Transcript({ t, messages, lastUser, assistantText, open, onToggl
                 <span className="text-mist-200">
                   {message.role === "user" ? message.text : assistantText(message)}
                 </span>
+                {message.role === "assistant" && message.kind === "answer" && (
+                  <div className="[&>div]:justify-start">
+                    <SourceChips sources={message.sources} label={t.conversation.sources} />
+                  </div>
+                )}
               </li>
             ))}
           </ol>
