@@ -1,11 +1,14 @@
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.llm.base import LLMProvider
 from app.main import create_app
+from app.services.rate_limit import RateLimiter
 
 REAL_KNOWLEDGE_BASE = Path(__file__).resolve().parents[2] / "knowledge_base"
 
@@ -114,18 +117,37 @@ def fixture_kb(tmp_path: Path) -> Path:
     return write_fixture_kb(tmp_path / "knowledge_base")
 
 
+def make_settings(knowledge_base_dir: Path, **overrides: Any) -> Settings:
+    """Settings that ignore any real `.env`, so tests never use a developer's API key."""
+    values: dict[str, Any] = {
+        "app_env": "test",
+        "cors_origins": ["http://localhost:3000"],
+        "knowledge_base_dir": knowledge_base_dir,
+        "llm_provider": "fake",
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
+
+
 @pytest.fixture
-def make_client() -> Iterator[Callable[[Path], TestClient]]:
-    """Build a client for a given knowledge base dir; runs the app lifespan."""
+def make_client() -> Iterator[Callable[..., TestClient]]:
+    """Build a client for a knowledge base dir; runs the app lifespan.
+
+    Keyword arguments are settings overrides, plus an optional `provider` (an LLMProvider
+    instance) and `rate_limiter`.
+    """
     clients: list[TestClient] = []
 
-    def factory(knowledge_base_dir: Path) -> TestClient:
-        settings = Settings(
-            app_env="test",
-            cors_origins=["http://localhost:3000"],
-            knowledge_base_dir=knowledge_base_dir,
-        )
-        client = TestClient(create_app(settings))
+    def factory(
+        knowledge_base_dir: Path,
+        *,
+        provider: LLMProvider | None = None,
+        rate_limiter: RateLimiter | None = None,
+        **overrides: Any,
+    ) -> TestClient:
+        settings = make_settings(knowledge_base_dir, **overrides)
+        app = create_app(settings, llm_provider=provider, rate_limiter=rate_limiter)
+        client = TestClient(app)
         client.__enter__()
         clients.append(client)
         return client
@@ -136,5 +158,5 @@ def make_client() -> Iterator[Callable[[Path], TestClient]]:
 
 
 @pytest.fixture
-def client(make_client: Callable[[Path], TestClient], fixture_kb: Path) -> TestClient:
+def client(make_client: Callable[..., TestClient], fixture_kb: Path) -> TestClient:
     return make_client(fixture_kb)

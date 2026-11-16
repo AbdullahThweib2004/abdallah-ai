@@ -15,7 +15,7 @@ Interactive docs are served by FastAPI at `/docs` while the backend is running.
 | ✅ Implemented | `GET /api/v1/projects/{project_id}` | One public project with its content sections |
 | ✅ Implemented | `GET /api/v1/contact` | Public contact links (the future `open_public_link` allowlist) |
 | Planned | `POST /api/v1/sessions` | Create a conversation session |
-| Planned | `POST /api/v1/chat` | Submit a text turn and receive a structured response |
+| ✅ Implemented | `POST /api/v1/chat` | Submit a text turn; the answer streams back as Server-Sent Events |
 | Planned | `POST /api/v1/voice/transcribe` | Transcribe an uploaded visitor audio clip |
 | Planned | `POST /api/v1/voice/generate` | Generate speech for validated response text |
 
@@ -95,31 +95,70 @@ Same fields as a list item, plus:
 { "links": [{ "link_id": "github", "label": "GitHub", "url": "https://github.com/…", "kind": "github" }] }
 ```
 
-## `POST /api/v1/chat` (planned)
+## `POST /api/v1/chat`
 
-Request:
+Streams one answer from Abdallah AI. Until step 5 (RAG) the whole approved knowledge base is
+placed in the system prompt (`backend/app/agents/prompts/system_v1.md`). Cards are still chosen
+by the frontend's temporary keyword stub, not by the model (that arrives with step 6).
 
-```json
-{
-  "session_id": "session_abc123",
-  "message": "Can you explain the banking project?",
-  "language": "en"
-}
-```
-
-Response:
+Request (strict, unknown fields → 422):
 
 ```json
 {
-  "session_id": "session_abc123",
-  "response": "The banking platform combines ...",
-  "language": "en",
-  "action": { "type": "show_project", "project_id": "banking-intelligence" },
-  "sources": ["banking_intelligence.md"]
+  "message": "What's his strongest project?",
+  "history": [
+    { "role": "user", "content": "Hi" },
+    { "role": "assistant", "content": "Hi! I'm Abdallah's AI version…" }
+  ],
+  "ui_language": "en"
 }
 ```
 
-Never expose private retrieval passages or internal prompts to the browser.
+| Field | Rules |
+|---|---|
+| `message` | trimmed, 1–800 characters |
+| `history` | up to 8 previous turns, `role` is `user` or `assistant`, `content` 1–2000 characters |
+| `ui_language` | `en` (default) or `ar`; used for error messages and as the fallback reply language |
+
+Response: `text/event-stream`. Each event is `event: <name>` + `data: <json>`:
+
+| Event | Data | When |
+|---|---|---|
+| `start` | `{"request_id": "…", "language": "en" \| "ar"}` | first; `language` is the reply language detected from the message (share of Arabic-script words ≥ 40 %), falling back to `ui_language` |
+| `token` | `{"text": "…"}` | zero or more; the answer text only (reasoning output is discarded server-side) |
+| `done` | `{"usage": {"input_tokens": n, "output_tokens": n}, "latency_ms": n}` | last, on success |
+| `error` | `{"code": "unavailable" \| "timeout" \| "busy", "message": "…"}` | last, on failure; may follow some `token` events (keep the partial answer) |
+
+`error.message` is a friendly sentence in `ui_language` with no provider details. The server
+never hangs: if the provider sends nothing for `LLM_TIMEOUT_SECONDS`, the stream ends with
+`error` `timeout`.
+
+```text
+event: start
+data: {"request_id": "5f0c…", "language": "en"}
+
+event: token
+data: {"text": "Abdallah"}
+
+event: done
+data: {"usage": {"input_tokens": 9112, "output_tokens": 84}, "latency_ms": 1430}
+```
+
+Limits (in-memory per process; a shared store replaces it in step 10). When a limit is hit the
+response is **HTTP 429** JSON with a `Retry-After` header, not a stream:
+
+```json
+{ "detail": "You're sending messages quite fast. Please wait a minute and try again.", "code": "rate_limited" }
+```
+
+| Code | Limit (setting, default) |
+|---|---|
+| `rate_limited` | per IP per minute (`CHAT_RATE_PER_MINUTE`, 8) |
+| `daily_limit` | per IP per UTC day (`CHAT_RATE_PER_DAY`, 60) |
+| `daily_cap` | all visitors per UTC day (`CHAT_MAX_REQUESTS_PER_DAY`, 500) |
+
+Only valid requests count towards the limits (a 422 does not). Logs contain request id,
+language, model, token usage, latency and status, never the message text or the API key.
 
 ## UI actions (allowlist)
 

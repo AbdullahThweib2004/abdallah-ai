@@ -101,6 +101,7 @@ def split_bullets(text: str) -> tuple[str | None, list[str]]:
 class KnowledgeService:
     def __init__(self, documents: Iterable[KnowledgeDocument]) -> None:
         approved = [doc for doc in documents if doc.meta.status == "approved"]
+        self.documents: tuple[KnowledgeDocument, ...] = tuple(approved)
         self._documents = {doc.meta.id: doc for doc in approved}
 
         projects = [doc for doc in approved if isinstance(doc.meta, ProjectMeta)]
