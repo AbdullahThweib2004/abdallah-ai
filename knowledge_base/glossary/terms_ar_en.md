@@ -13,14 +13,13 @@ tags: [glossary, arabic]
 ## Names and places
 | English | Arabic | Notes |
 |---|---|---|
-| Abdullah | عبدالله | TODO: confirm the spelling you prefer, and add the family name in Arabic and English |
+| Abdallah Thuieb | عبدالله ذويب | |
 | Al-Quds University | جامعة القدس | |
 | Bank of Palestine | بنك فلسطين | |
 | Freie Universität Berlin | جامعة برلين الحرة | |
-| Bethlehem | بيت لحم | |
 | Palestine | فلسطين | |
 | Information Technology | تكنولوجيا المعلومات | |
-| Dual-study training | التعليم الثنائي (دراسة وتدريب) | TODO: is this how you say it in Arabic? |
+| Dual-study training | التعليم الثنائي (دراسة وتدريب) | |
 
 ## Project names
 | English | Arabic | Notes |
@@ -28,7 +27,7 @@ tags: [glossary, arabic]
 | AI Developer Assistant | مساعد المطورين الذكي | Usually kept in English when spoken |
 | AI-Powered Banking Intelligence Platform | منصة الذكاء المصرفي | |
 | AI Agent Security & Control Platform | منصة أمان وحوكمة وكلاء الذكاء الاصطناعي | |
-| Nawa | نواة | TODO: confirm this is the meaning of the name |
+| Nawa | نواة | Means core or nucleus |
 | RAG AI Assistant | مساعد RAG للمستندات | |
 | Momentum | Momentum | Kept in English |
 | Smart System | Smart System | Kept in English |

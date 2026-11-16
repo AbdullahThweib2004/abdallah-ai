@@ -31,8 +31,8 @@ A learning project: to understand what really happens when a trained neural netw
 ## Target users
 Developers and students who want to see how inference engines work inside. It also demonstrates low-level performance engineering skills.
 
-## Abdullah's contribution
-<!-- TODO: Solo project? What does the name "Nawa" mean to you (نواة = nucleus/core)? -->
+## Abdallah's contribution
+Abdallah designed and built the whole project on his own. The name "Nawa" comes from the Arabic word نواة, meaning core or nucleus.
 
 ## Architecture
 A model is trained in Python with PyTorch and exported to a custom Nawa model format. The C++ engine loads it and runs it with its own tensors, layers (Linear, ReLU, Sigmoid, Softmax, INT8 Linear), an AVX2 matrix-multiplication kernel, a thread pool and INT8 quantization. A command-line tool evaluates and predicts, and a small web demo served by the engine lets users draw a digit in the browser while preprocessing and inference run in C++.

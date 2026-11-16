@@ -7,7 +7,7 @@ status: draft
 visibility: public
 last_reviewed: null
 tags: [electron, desktop, developer-tools, local-ai]
-project_status: null  # TODO: completed, in_progress or research?
+project_status: completed
 technologies: [Electron, React, TypeScript, Vite, node-pty, SQLite, Ollama]
 repository_url: https://github.com/AbdullahThweib2004/smart-system
 demo_url: null
@@ -31,8 +31,8 @@ Developers switch between many projects and tools. Smart System puts project man
 ## Target users
 Developers who work on several projects at once.
 
-## Abdullah's contribution
-<!-- TODO: Solo project? Why did you build it? -->
+## Abdallah's contribution
+Abdallah designed and built the whole project on his own.
 
 ## Architecture
 An Electron desktop application with a React and TypeScript interface built with Vite. The main process provides the terminal through node-pty and local storage through SQLite, and exposes them to the interface through a preload bridge. AI features can run locally through Ollama.
@@ -54,13 +54,12 @@ The user's own local projects.
 
 ## Challenges and trade-offs
 - Native modules (node-pty and SQLite) failed to load because they were compiled for a different Node version than the one inside Electron. Fixed by rebuilding them for Electron automatically after every install.
-<!-- TODO: Anything else? -->
 
 ## Results (only verified results)
-<!-- TODO: Any results? Otherwise remove this TODO and leave the section empty. -->
+No formal evaluation has been published for this project yet.
 
 ## Limitations
-<!-- TODO: Known limitations? For example, Windows-focused shells. -->
+- The integrated terminal targets Windows shells (cmd and PowerShell).
 
 ## Public repository
 See frontmatter.

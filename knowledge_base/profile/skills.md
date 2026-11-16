@@ -10,8 +10,6 @@ tags: [skills]
 ---
 # Technical Skills
 
-<!-- TODO: Mark which areas you are strongest in, and which you are still learning. The avatar should not oversell. -->
-
 ## Programming languages
 Python, TypeScript, JavaScript, C++ (C++20), C, Java, PHP.
 

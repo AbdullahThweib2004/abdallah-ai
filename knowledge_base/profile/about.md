@@ -1,35 +1,35 @@
 ---
 id: about
 type: profile
-title: "About Abdullah"
+title: "About Abdallah Thuieb"
 language: en
 status: draft
 visibility: public
 last_reviewed: null
 tags: [profile, introduction]
 ---
-# About Abdullah
+# About Abdallah Thuieb
 
-<!-- TODO: Which name should visitors see? Spec: "Abdullah". CV: "Abdallah Thuieb". GitHub: "AbdullahThweib2004". Pick one English spelling and give the Arabic spelling too. -->
-<!-- TODO: Headline. CV says "IT Student | Cybersecurity & Software Development". Your recent projects are AI engineering heavy. Keep it, or change to something like "AI Engineer | Software Developer"? -->
+## Headline
+AI Engineer | Software Developer
 
 ## Summary
-Abdullah is an Information Technology student at Al-Quds University in Palestine, with a strong interest in AI engineering, software development and cybersecurity. Since December 2022 he has been doing dual-study practical training as a Software Development Intern at Bank of Palestine, about two years in total, rotating across software development, networking, database management and information security.
+Abdallah Thuieb is an Information Technology graduate from Al-Quds University in Palestine, with a strong interest in AI engineering, software development and cybersecurity. Alongside his studies he completed dual-study practical training as a Software Development Intern at Bank of Palestine, rotating across software development, networking, database management and information security. The training programme runs until December 2026.
 
-His recent work focuses on applied AI: retrieval-augmented generation (RAG), the Model Context Protocol (MCP), LLM-powered developer tools, and the security of autonomous AI agents. He also enjoys low-level engineering, for example building a neural-network inference engine from scratch in C++.
-
-<!-- TODO: Student or graduate? The CV says 08/2022 to Present, the banking repo calls itself a graduation project. What is the actual or expected graduation date? Update the first sentence accordingly. -->
+He is interested in everything related to artificial intelligence and closely follows new models, tools and ideas as they appear. His recent work focuses on applied AI: retrieval-augmented generation (RAG), the Model Context Protocol (MCP), LLM-powered developer tools, and the security of autonomous AI agents. He also enjoys low-level engineering, for example building a neural-network inference engine from scratch in C++.
 
 ## Location
-Bethlehem, Palestine.
-
-<!-- TODO: OK to show the city publicly? If not, change to "Palestine". -->
+Palestine.
 
 ## Languages
 Arabic (native), English (fluent), German (basic, A1).
 
 ## Ways of working
-Abdullah enjoys working in a team and solving real, impactful problems. He has worked in Agile teams with version control and code review. During an Erasmus+ exchange semester at Freie Universität Berlin he exchanged knowledge with people from many different countries.
+Abdallah enjoys working in a team and solving real, impactful problems. He has worked in Agile teams with version control and code review. During an Erasmus+ exchange semester at Freie Universität Berlin he exchanged knowledge with people from many different countries.
 
 ## Short self-introduction
-<!-- TODO: In your own words, how do you introduce yourself in two sentences? The avatar will use this as its default introduction. Arabic or English, slang is fine, I will polish it. -->
+The assistant's default greeting. It always says it is an AI version of Abdallah, never Abdallah himself.
+
+English: "Hi, I'm the AI version of Abdallah Thuieb, an AI engineer from Palestine who builds AI you can actually trust: assistants that back every answer with a source, a platform that catches AI agents going rogue, and even a neural-network engine he wrote from scratch in C++. Ask me anything about his work, and every answer will come from what he has really built."
+
+Arabic: "أهلاً بك! أنا النسخة الذكية من عبدالله ذويب، مهندس ذكاء اصطناعي من فلسطين يبني أنظمة AI يمكنك أن تثق بها: مساعدين يدعمون كل إجابة بمصدرها، ومنصة تكشف وكلاء الذكاء الاصطناعي حين يخرجون عن السيطرة، وحتى محرك شبكات عصبية كتبه من الصفر بلغة C++. اسألني أي شيء عن أعماله، وكل إجابة ستكون مما بناه فعلاً."

@@ -31,8 +31,8 @@ Finding and combining information spread across several long documents is slow. 
 ## Target users
 Anyone who needs to ask questions across a set of documents.
 
-## Abdullah's contribution
-<!-- TODO: Solo project? Was this your first RAG project? What did you learn from it that you used later in the AI Developer Assistant? -->
+## Abdallah's contribution
+Abdallah designed and built the whole project on his own.
 
 ## Architecture
 An ingestion script loads the documents, splits them, embeds them and stores the vectors in ChromaDB. A FastAPI backend retrieves the relevant passages and asks an LLM through OpenRouter to answer from them. A React and TypeScript frontend provides the chat interface.
@@ -51,13 +51,15 @@ Sample documents included with the project, about AI search, SEO, GEO and AIO.
 - Detects unrelated questions and says the topic is not covered instead of inventing an answer.
 
 ## Challenges and trade-offs
-<!-- TODO: What was hard here? For example chunk size, comparison questions, or keeping the model from answering outside the documents. -->
+- Keeping answers grounded: questions outside the documents are detected and declined instead of being answered from the model's general knowledge.
+- Answering comparison questions when the documents contain no ready-made comparison.
 
 ## Results (only verified results)
-<!-- TODO: Any measured results? If none, leave this section out or write "No formal evaluation yet." -->
+No formal evaluation has been published for this project yet.
 
 ## Limitations
-<!-- TODO: Known limitations? -->
+- Built and demonstrated with a small set of sample documents.
+- No formal retrieval or answer-quality evaluation yet.
 
 ## Public repository
 See frontmatter.

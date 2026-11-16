@@ -31,8 +31,8 @@ Posting consistently on LinkedIn is hard. Momentum helps a person stay consisten
 ## Target users
 Professionals who want to post regularly on LinkedIn.
 
-## Abdullah's contribution
-<!-- TODO: Solo project? Did you build it for yourself? -->
+## Abdallah's contribution
+Abdallah designed and built the whole project on his own.
 
 ## Architecture
 A Next.js App Router application in TypeScript, with Supabase for the database and authentication. Data access reads from Supabase and falls back to an in-memory mock dataset when Supabase is not configured. Deploy-ready for Vercel.
@@ -55,10 +55,9 @@ The user's own interests, drafts and engagement logs. A demo mode ships with moc
 
 ## Challenges and trade-offs
 - The user always publishes on LinkedIn manually. Momentum never posts automatically.
-<!-- TODO: Anything else hard or interesting? -->
 
 ## Results (only verified results)
-<!-- TODO: Do you use it yourself? Any results? Otherwise remove this TODO and leave the section empty. -->
+No usage results have been published yet.
 
 ## Limitations
 - AI draft generation currently returns mock content. The function is ready to be connected to an AI provider.

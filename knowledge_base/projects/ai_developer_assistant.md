@@ -31,8 +31,8 @@ Understanding an unfamiliar codebase or chasing a bug means jumping between sour
 ## Target users
 Software engineers who need to understand a repository or investigate a bug.
 
-## Abdullah's contribution
-<!-- TODO: Solo project? If yes, write "Designed and built the whole project." Anything you want to highlight as the part you are proudest of? -->
+## Abdallah's contribution
+Abdallah designed and built the whole project on his own.
 
 ## Architecture
 A repository goes through an ingestion pipeline that only reads safe files, then is split into chunks, embedded with a local embedding model and stored in Chroma. At question time a retriever finds the most relevant chunks and the LLM answers only from that context, with citations to files and line ranges.
@@ -58,7 +58,6 @@ The repository the user chooses to index (code, Markdown, text, config files and
 ## Challenges and trade-offs
 - Prompt injection: code, documentation and GitHub issues can contain instructions aimed at the model, so all of it is handled as data and write actions are kept out of the model's control.
 - Balancing usefulness with safety for GitHub write access, solved with a draft-then-human-approval flow instead of letting the model post directly.
-<!-- TODO: What was the hardest problem you hit while building it, and how did you solve it? -->
 
 ## Results (only verified results)
 From the project's own evaluation:
@@ -70,7 +69,6 @@ From the project's own evaluation:
 ## Limitations
 - Retrieval ranking is weaker on a larger real repository (MRR 0.549 on its own codebase) than on the small sample project.
 - Runs as a local, single-user application.
-<!-- TODO: Add anything else from docs/evaluation.md "known weaknesses" you want visitors to know. -->
 
 ## Public repository
 See frontmatter.

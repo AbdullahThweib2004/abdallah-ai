@@ -31,8 +31,8 @@ As organizations let AI agents act on their behalf, they need to see what each a
 ## Target users
 Security and platform teams that operate autonomous AI agents.
 
-## Abdullah's contribution
-<!-- TODO: Solo project? What inspired it? Is this the "MCP security research" mentioned in the original spec, or something different? -->
+## Abdallah's contribution
+Abdallah designed and built the whole project on his own.
 
 ## Architecture
 Agents report every action as an event to a FastAPI service. Each event is stored in PostgreSQL as a durable event log and projected into Neo4j as a graph of entities and relationships. A React dashboard shows agents, the behavior graph, alerts and forensic timelines. The whole stack runs with Docker Compose.

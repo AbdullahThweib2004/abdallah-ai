@@ -1,20 +1,17 @@
 ---
 id: goals
 type: career
-title: "Career Goals"
+title: "Career Direction"
 language: en
 status: draft
 visibility: public
 last_reviewed: null
 tags: [goals, career]
 ---
-# Career Goals
+# Career Direction
 
-## What he is looking for
-<!-- TODO: What kind of role are you looking for (AI Engineer, Software Engineer, security-focused)? Full-time, internship, freelance? Remote, Palestine, abroad? -->
+## Focus
+Abdallah is not limiting himself to one specific job title. He is interested in everything related to artificial intelligence, and he keeps up with new models, tools and developments in AI as they appear around the world.
 
-## Next steps
-<!-- TODO: What do you want to learn or build next? -->
-
-## Availability
-<!-- TODO: When are you available to start? Delete if you prefer not to say. -->
+## Open to
+Opportunities where he can build real AI-powered products and keep learning, whether in AI engineering, software development, or the security of AI systems.
