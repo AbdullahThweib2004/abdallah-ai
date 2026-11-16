@@ -1,0 +1,88 @@
+# Retrieval evals (step 5): does the right chunk come back for a question?
+#   cd backend && uv run python -m evals.run_retrieval [--model <fastembed model id>]
+#
+# A case is a hit at rank r if any `expect` item matches the chunk at rank r:
+# same doc_id, and the same heading when `heading` is given. `previous` is the
+# previous user message (follow-up questions).
+
+cases:
+  # --- English ---------------------------------------------------------------------------
+  - {id: nawa-en, lang: en, query: "What is Nawa?", expect: [{doc_id: nawa-inference}]}
+  - id: nawa-results-en
+    lang: en
+    query: "How fast is Nawa on four threads?"
+    expect: [{doc_id: nawa-inference, heading: "Results (only verified results)"}]
+  - id: banking-ocr-en
+    lang: en
+    query: "How does the banking platform read ID photos?"
+    expect: [{doc_id: banking-intelligence, heading: "Key implementation details"}, {doc_id: banking-intelligence, heading: "Architecture"}]
+  - id: banking-relation-en
+    lang: en
+    query: "Was the banking platform built for Bank of Palestine?"
+    expect: [{doc_id: banking-intelligence, heading: "Abdallah's contribution"}, {doc_id: experience, heading: "Relation to his projects"}]
+  - id: mcp-server-en
+    lang: en
+    query: "Has he built an MCP server?"
+    expect: [{doc_id: ai-developer-assistant}, {doc_id: skills, heading: "AI and LLM engineering"}]
+  - {id: agent-security-en, lang: en, query: "Tell me about the AI agent security platform", expect: [{doc_id: ai-agent-security-platform}]}
+  - {id: training-en, lang: en, query: "What did he do at Bank of Palestine?", expect: [{doc_id: experience}]}
+  - id: departments-en
+    lang: en
+    query: "Which departments did he rotate through?"
+    expect: [{doc_id: experience, heading: "Departments"}]
+  - {id: education-en, lang: en, query: "Where did he study?", expect: [{doc_id: education}]}
+  - id: erasmus-en
+    lang: en
+    query: "Did he study abroad?"
+    expect: [{doc_id: education, heading: "Exchange semester"}]
+  - {id: contact-en, lang: en, query: "How can I reach him by email?", expect: [{doc_id: public-links}]}
+  - id: fastapi-en
+    lang: en
+    query: "Which of his projects use FastAPI?"
+    expect: [{doc_id: ai-developer-assistant}, {doc_id: ai-agent-security-platform}, {doc_id: rag-ai-assistant}, {doc_id: banking-intelligence}]
+  - {id: momentum-en, lang: en, query: "What is the LinkedIn content assistant?", expect: [{doc_id: momentum}]}
+  - {id: desktop-en, lang: en, query: "Does he have a desktop app?", expect: [{doc_id: smart-system}]}
+  - id: follow-up-en
+    lang: en
+    previous: "Tell me about Nawa."
+    query: "Which language is it written in?"
+    expect: [{doc_id: nawa-inference}]
+  - {id: goals-en, lang: en, query: "What kind of roles is he looking for?", expect: [{doc_id: goals}]}
+  - {id: chat-docs-en, lang: en, query: "the project where you chat with your PDF documents", expect: [{doc_id: rag-ai-assistant}]}
+
+  # --- Arabic ----------------------------------------------------------------------------
+  - {id: bank-project-ar, lang: ar, query: "شو عمل بمشروع البنك؟", expect: [{doc_id: banking-intelligence}]}
+  - {id: nawa-ar, lang: ar, query: "حدّثني عن مشروع نواة", expect: [{doc_id: nawa-inference}]}
+  - id: nawa-results-ar
+    lang: ar
+    query: "ما هي سرعة نواة في معالجة الصور؟"
+    expect: [{doc_id: nawa-inference, heading: "Results (only verified results)"}, {doc_id: nawa-inference, heading: "One-line summary"}]
+  - {id: training-ar, lang: ar, query: "ماذا فعل في بنك فلسطين؟", expect: [{doc_id: experience}]}
+  - id: departments-ar
+    lang: ar
+    query: "ما الأقسام التي عمل فيها خلال التدريب؟"
+    expect: [{doc_id: experience, heading: "Departments"}]
+  - {id: education-ar, lang: ar, query: "أين درس عبدالله؟", expect: [{doc_id: education}]}
+  - id: abroad-ar
+    lang: ar
+    query: "هل درس في الخارج؟"
+    expect: [{doc_id: education, heading: "Exchange semester"}]
+  - {id: contact-ar, lang: ar, query: "كيف أتواصل معه؟", expect: [{doc_id: public-links}]}
+  - id: mcp-server-ar
+    lang: ar
+    query: "هل بنى خادم MCP؟"
+    expect: [{doc_id: ai-developer-assistant}, {doc_id: skills, heading: "AI and LLM engineering"}]
+  - {id: agent-security-ar, lang: ar, query: "أخبرني عن منصة أمان وكلاء الذكاء الاصطناعي", expect: [{doc_id: ai-agent-security-platform}]}
+  - id: banking-relation-ar
+    lang: ar
+    query: "هل منصة الذكاء المصرفي مستخدمة في بنك فلسطين؟"
+    expect: [{doc_id: banking-intelligence, heading: "Abdallah's contribution"}, {doc_id: experience, heading: "Relation to his projects"}]
+  - {id: interests-ar, lang: ar, query: "ما هي اهتماماته؟", expect: [{doc_id: interests}]}
+  - {id: goals-ar, lang: ar, query: "ما نوع الوظائف التي يبحث عنها؟", expect: [{doc_id: goals}]}
+  - id: follow-up-ar
+    lang: ar
+    previous: "حدّثني عن مشروع نواة"
+    query: "بأي لغة برمجة كُتب؟"
+    expect: [{doc_id: nawa-inference}]
+  - {id: desktop-ar, lang: ar, query: "هل عنده تطبيق سطح مكتب؟", expect: [{doc_id: smart-system}]}
+  - {id: chat-docs-ar, lang: ar, query: "مشروع المحادثة مع المستندات", expect: [{doc_id: rag-ai-assistant}]}

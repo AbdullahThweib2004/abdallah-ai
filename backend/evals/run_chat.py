@@ -9,6 +9,7 @@ the main model is what gets evaluated.
 
 import argparse
 import asyncio
+import json
 import re
 import sys
 import time
@@ -17,12 +18,15 @@ from pathlib import Path
 
 import yaml
 
-from app.agents.prompt import build_system_prompt, estimate_tokens
+from app.agents.prompt import build_system_prompt
 from app.core.config import get_settings
 from app.llm.base import LLMProvider, LLMRateLimitError, Usage
 from app.llm.factory import build_provider
 from app.models.chat import ChatRequest, ChatTurn
-from app.services.chat_service import build_messages
+from app.rag.identity import build_identity_context
+from app.rag.retriever import Retriever
+from app.rag.service import build_retriever
+from app.services.chat_service import build_messages, previous_user_message, reasoning_effort_for
 from app.services.knowledge_service import load_knowledge_service
 from app.services.language import detect_language
 
@@ -64,6 +68,9 @@ def check(case: dict, answer: str) -> list[str]:
     include = case.get("must_include_any") or []
     if include and not any(normalize(needle) in text for needle in include):
         reasons.append("missing all of must_include_any")
+    missing = [n for n in case.get("must_include_all") or [] if normalize(n) not in text]
+    if missing:
+        reasons.append(f"missing {', '.join(missing)}")
     for needle in case.get("must_not_include") or []:
         if normalize(needle) in text:
             reasons.append(f"contains forbidden {needle!r}")
@@ -72,30 +79,42 @@ def check(case: dict, answer: str) -> list[str]:
     return reasons
 
 
-async def ask(provider: LLMProvider, system_prompt: str, case: dict, settings) -> tuple[str, Usage]:
+@dataclass
+class Context:
+    retriever: Retriever
+    identity: str
+
+
+async def ask(provider: LLMProvider, context: Context, case: dict, settings) -> tuple[str, Usage]:
+    """Same path as the app: retrieve → prompt with retrieved chunks → stream the answer."""
     request = ChatRequest(
         message=case["message"],
         history=[ChatTurn(**turn) for turn in case.get("history", [])],
         ui_language=case.get("language", "en"),
     )
     language = detect_language(request.message, request.ui_language)
+    retrieval = context.retriever.retrieve(request.message, previous_user_message(request))
+    system_prompt = build_system_prompt(context.identity, retrieval.chunks)
     messages = build_messages(system_prompt, request, language)
     parts: list[str] = []
     usage = Usage()
     async for chunk in provider.stream(
-        messages, max_tokens=settings.llm_max_output_tokens, temperature=settings.llm_temperature
+        messages,
+        max_tokens=settings.llm_max_output_tokens,
+        temperature=settings.llm_temperature,
+        reasoning_effort=reasoning_effort_for(language, settings),
     ):
         parts.append(chunk.text)
         usage = chunk.usage or usage
     return "".join(parts), usage
 
 
-async def run_case(provider: LLMProvider, system_prompt: str, case: dict, settings) -> Result:
+async def run_case(provider: LLMProvider, context: Context, case: dict, settings) -> Result:
     for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
         started = time.perf_counter()
         try:
             answer, usage = await asyncio.wait_for(
-                ask(provider, system_prompt, case, settings),
+                ask(provider, context, case, settings),
                 timeout=settings.llm_timeout_seconds * 3,
             )
         except LLMRateLimitError as exc:
@@ -138,11 +157,20 @@ async def main() -> int:
     parser.add_argument("--allow-fallback", action="store_true", help="keep LLM_FALLBACK_MODEL on")
     parser.add_argument("--delay", type=float, default=2.0, help="seconds between cases")
     parser.add_argument("--show-answers", action="store_true", help="print every answer")
+    parser.add_argument("--lang", choices=["en", "ar"], help="run only cases in this language")
+    parser.add_argument(
+        "--reasoning-effort-ar",
+        choices=["low", "medium", "high"],
+        help="override for Arabic replies",
+    )
+    parser.add_argument("--json", type=Path, help="also write results (with answers) to this file")
     args = parser.parse_args()
 
     settings = get_settings()
     if not args.allow_fallback:
         settings = settings.model_copy(update={"llm_fallback_model": None})
+    if args.reasoning_effort_ar:
+        settings = settings.model_copy(update={"llm_reasoning_effort_ar": args.reasoning_effort_ar})
     if settings.llm_provider == "fake":
         print("LLM_PROVIDER=fake: evals need the real provider configured in .env", file=sys.stderr)
         return 2
@@ -151,17 +179,23 @@ async def main() -> int:
     if knowledge is None:
         print("Knowledge base failed to load", file=sys.stderr)
         return 2
-    system_prompt = build_system_prompt(knowledge.documents, settings.llm_knowledge_mode)
+    context = Context(
+        build_retriever(knowledge.documents, settings),
+        build_identity_context(knowledge.profile, knowledge.contact(), knowledge.list_projects()),
+    )
     provider = build_provider(settings)
 
     cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
     if args.only:
         cases = [case for case in cases if case["id"] in args.only]
+    if args.lang:
+        cases = [case for case in cases if case.get("language", "en") == args.lang]
 
     print(
-        f"Provider {provider.name}, model {provider.model}, {len(cases)} cases, "
-        f"knowledge mode {settings.llm_knowledge_mode}, "
-        f"system prompt ~{estimate_tokens(system_prompt)} tokens (estimate)\n",
+        f"Provider {provider.name}, model {provider.model}, {len(cases)} cases, retrieval "
+        f"{'hybrid' if context.retriever.vector_enabled else 'BM25 only'} "
+        f"(top {settings.rag_top_k}, budget {settings.rag_max_context_tokens} tokens), reasoning "
+        f"{settings.llm_reasoning_effort} / Arabic {settings.llm_reasoning_effort_ar or 'same'}\n",
         flush=True,
     )
     results: list[Result] = []
@@ -169,7 +203,7 @@ async def main() -> int:
         for index, case in enumerate(cases):
             if index:
                 await asyncio.sleep(args.delay)
-            result = await run_case(provider, system_prompt, case, settings)
+            result = await run_case(provider, context, case, settings)
             results.append(result)
             status = "PASS" if result.passed else "FAIL"
             print(f"  [{index + 1}/{len(cases)}] {status} {case['id']}", flush=True)
@@ -180,6 +214,26 @@ async def main() -> int:
 
     print()
     print_table(results)
+    if args.json:
+        args.json.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": r.case_id,
+                        "passed": r.passed,
+                        "reasons": r.reasons,
+                        "answer": r.answer,
+                        "input_tokens": r.usage.input_tokens,
+                        "output_tokens": r.usage.output_tokens,
+                        "latency_ms": r.latency_ms,
+                    }
+                    for r in results
+                ],
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
     passed = sum(r.passed for r in results)
     answered = [r for r in results if r.usage.input_tokens]
     total_in = sum(r.usage.input_tokens for r in results)

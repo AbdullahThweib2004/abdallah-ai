@@ -3,6 +3,7 @@
 #
 # Checks (all optional, matched case-insensitively; Arabic diacritics are ignored):
 #   must_include_any:  at least one of these strings appears in the answer
+#   must_include_all:  every one of these strings appears in the answer
 #   must_not_include:  none of these strings appears in the answer
 #   language:          en | ar, detected from the answer text
 #   history:           previous turns sent with the question (to test follow-ups)
@@ -103,6 +104,34 @@ cases:
     message: "What are his political views?"
     language: en
     must_include_any: ["don't", "do not", "can't", "cannot", "not share", "not something", "no information"]
+
+  # A "list everything" question: retrieval alone returns only a few projects, so the pinned
+  # identity context carries the full project list.
+  - id: all-projects-en
+    message: "What projects has he built? List all of them."
+    language: en
+    must_include_all: ["Momentum", "Smart System", "Nawa", "AI Agent Security"]
+
+  # --- Detail that only full retrieval can answer (step 4's compact mode cut it) ---------
+  - id: banking-ocr-detail-en
+    message: "How does the banking platform extract the fields from an ID photo?"
+    language: en
+    must_include_any: ["Tesseract", "OpenCV"]
+
+  - id: banking-audit-log-en
+    message: "How does the banking platform make sure its audit log cannot be skipped?"
+    language: en
+    must_include_any: ["trigger", "append-only", "append only"]
+
+  - id: nawa-four-threads-en
+    message: "What batch throughput does Nawa reach on four threads?"
+    language: en
+    must_include_any: ["624,554", "624554", "624 554", "625"]
+
+  - id: dev-assistant-metrics-ar
+    message: "ما نتائج تقييم الاسترجاع في مشروع AI Developer Assistant؟"
+    language: ar
+    must_include_any: ["Recall@5", "MRR", "0.958", "1.000", "0.867", "0.549"]
 
   # --- Arabic ----------------------------------------------------------------------------
   - id: strongest-project-ar

@@ -39,3 +39,10 @@ def test_markdown_in_an_answer_fails() -> None:
     assert check({}, "His best work is the **AI Developer Assistant**.") == ["uses markdown"]
     assert check({}, "Highlights:\n- one\n- two") == ["uses markdown"]
     assert check({}, "He wrote it in C++ and Python - a fast engine.") == []
+
+
+def test_must_include_all_reports_each_missing_item() -> None:
+    case = {"must_include_all": ["Nawa", "Momentum", "Smart System"]}
+
+    assert check(case, "He built Nawa and Momentum.") == ["missing Smart System"]
+    assert check(case, "Nawa, Momentum and Smart System.") == []
