@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import type { AnswerMessage } from "@/hooks/useConversation";
 import type { Dictionary } from "@/lib/i18n/config";
+import { isolateLatin } from "@/lib/text/bidi";
 
 import { SourceChips } from "./SourceChips";
 
@@ -43,7 +44,7 @@ export function AnswerSubtitle({ answer, errorText, t, fallbackLang }: Props) {
       >
         {answer.text && (
           <p lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} className="whitespace-pre-line">
-            {answer.text}
+            {lang === "ar" ? isolateLatin(answer.text) : answer.text}
             {!finished && <span aria-hidden="true" className="ms-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-accent motion-reduce:animate-none" />}
           </p>
         )}

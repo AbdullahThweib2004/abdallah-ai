@@ -2,6 +2,7 @@
 
 import type { Message } from "@/hooks/useConversation";
 import type { Dictionary } from "@/lib/i18n/config";
+import { isolateLatin } from "@/lib/text/bidi";
 
 import { SourceChips } from "./SourceChips";
 
@@ -12,10 +13,16 @@ type Props = {
   assistantText: (message: Extract<Message, { role: "assistant" }>) => string;
   open: boolean;
   onToggle: () => void;
+  /** Whether the UI is right-to-left (the greeting is written in the UI language). */
+  rtl: boolean;
 };
 
 /** The visitor's last message plus a History toggle that reveals the whole conversation. */
-export function Transcript({ t, messages, lastUser, assistantText, open, onToggle }: Props) {
+export function Transcript({ t, messages, lastUser, assistantText, open, onToggle, rtl }: Props) {
+  // Answers carry their reply language; the greeting follows the UI direction.
+  const isRtl = (message: Extract<Message, { role: "assistant" }>) =>
+    message.kind === "answer" ? message.language === "ar" : rtl;
+
   if (!lastUser || lastUser.role !== "user") return null;
 
   return (
@@ -51,7 +58,11 @@ export function Transcript({ t, messages, lastUser, assistantText, open, onToggl
                   {message.role === "user" ? t.conversation.you : t.conversation.assistant}
                 </span>
                 <span className="text-mist-200">
-                  {message.role === "user" ? message.text : assistantText(message)}
+                  {message.role === "user"
+                    ? message.text
+                    : isRtl(message)
+                      ? isolateLatin(assistantText(message))
+                      : assistantText(message)}
                 </span>
                 {message.role === "assistant" && message.kind === "answer" && (
                   <div className="[&>div]:justify-start">

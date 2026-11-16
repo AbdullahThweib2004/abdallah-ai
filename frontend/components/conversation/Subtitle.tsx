@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { isolateLatin } from "@/lib/text/bidi";
+
 const CHARS_PER_TICK = 2;
 const TICK_MS = 20;
 
@@ -44,8 +46,10 @@ export function Subtitle({ text, lang, dir, onDone }: Props) {
       <span className="sr-only">{text}</span>
       {/* The invisible copy reserves the final height so the layout does not jump while typing. */}
       <span aria-hidden="true" className="grid">
-        <span className="invisible col-start-1 row-start-1">{text}</span>
-        <span className="col-start-1 row-start-1">{text.slice(0, shown)}</span>
+        <span className="invisible col-start-1 row-start-1">{dir === "rtl" ? isolateLatin(text) : text}</span>
+        <span className="col-start-1 row-start-1">
+          {dir === "rtl" ? isolateLatin(text.slice(0, shown)) : text.slice(0, shown)}
+        </span>
       </span>
     </p>
   );

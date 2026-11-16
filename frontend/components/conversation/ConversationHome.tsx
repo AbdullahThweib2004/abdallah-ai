@@ -142,6 +142,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
               assistantText={assistantText}
               open={historyOpen}
               onToggle={() => setHistoryOpen((value) => !value)}
+              rtl={locale === "ar"}
             />
 
             <Composer
