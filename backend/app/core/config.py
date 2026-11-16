@@ -27,17 +27,28 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None
     llm_model: str | None = None
     llm_fallback_model: str | None = None
-    # TEMPORARY until step 5 (RAG): `compact` sends a shorter KNOWLEDGE section so a request
-    # fits small tokens-per-minute limits (Groq free tier: 8K TPM).
-    llm_knowledge_mode: Literal["full", "compact"] = "full"
     # Sent only when set (gpt-oss / o-series); leave empty for models without reasoning.
     llm_reasoning_effort: Literal["low", "medium", "high"] | None = "low"
+    # Optional override for Arabic replies; falls back to llm_reasoning_effort.
+    llm_reasoning_effort_ar: Literal["low", "medium", "high"] | None = None
     llm_max_output_tokens: int = Field(default=500, ge=1, le=8000)
     llm_temperature: float = Field(default=0.3, ge=0, le=2)
     llm_timeout_seconds: float = Field(default=30, gt=0)
     # USD per million tokens, only used for cost estimates in logs and evals.
     llm_input_cost_per_mtok: float = Field(default=0, ge=0)
     llm_output_cost_per_mtok: float = Field(default=0, ge=0)
+
+    # --- Retrieval (RAG, see app/rag) ---
+    rag_embedder: Literal["fastembed", "fake"] = "fastembed"
+    rag_embedding_model: str = "intfloat/multilingual-e5-large"
+    rag_models_dir: Path = Path(".models")
+    rag_index_dir: Path = Path("../chroma_data")
+    rag_top_k: int = Field(default=6, ge=1, le=20)
+    rag_max_context_tokens: int = Field(default=2000, ge=100)
+    # Minimum cosine similarity for a vector hit to count (BM25 hits are kept regardless).
+    # Model-specific: e5 scores sit in a narrow 0.7–0.85 band; 0.70 drops only unrelated hits
+    # without losing recall (see evals.run_retrieval --min-score). Re-tune when changing models.
+    rag_min_score: float = Field(default=0.70, ge=0, le=1)
 
     # --- Chat abuse and cost protection ---
     chat_rate_per_minute: int = Field(default=8, ge=1)
@@ -58,6 +69,7 @@ class Settings(BaseSettings):
         "llm_model",
         "llm_fallback_model",
         "llm_reasoning_effort",
+        "llm_reasoning_effort_ar",
         mode="before",
     )
     @classmethod
@@ -65,7 +77,7 @@ class Settings(BaseSettings):
         # `LLM_REASONING_EFFORT=` (empty) in .env means "do not send the parameter".
         return None if isinstance(value, str) and not value.strip() else value
 
-    @field_validator("knowledge_base_dir", mode="after")
+    @field_validator("knowledge_base_dir", "rag_models_dir", "rag_index_dir", mode="after")
     @classmethod
     def _resolve_knowledge_base_dir(cls, value: Path) -> Path:
         # Relative paths are resolved against backend/, independent of the working directory.
