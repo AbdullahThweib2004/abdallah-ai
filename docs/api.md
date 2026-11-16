@@ -16,8 +16,9 @@ Interactive docs are served by FastAPI at `/docs` while the backend is running.
 | ✅ Implemented | `GET /api/v1/contact` | Public contact links (the future `open_public_link` allowlist) |
 | Planned | `POST /api/v1/sessions` | Create a conversation session |
 | ✅ Implemented | `POST /api/v1/chat` | Submit a text turn; the answer streams back as Server-Sent Events |
-| Planned | `POST /api/v1/voice/transcribe` | Transcribe an uploaded visitor audio clip |
-| Planned | `POST /api/v1/voice/generate` | Generate speech for validated response text |
+| ✅ Implemented | `POST /api/v1/voice/transcribe` | Transcribe an uploaded visitor audio clip (multipart) |
+| ✅ Implemented | `POST /api/v1/voice/speak` | Stream speech (`audio/mpeg`) for one answer sentence (the spec's `voice/generate`) |
+| ✅ Implemented | `GET /api/v1/voice/config` | Which speech providers are active, so the UI adapts |
 
 Streaming routes may be added after the first prototype.
 
@@ -99,7 +100,7 @@ Same fields as a list item, plus:
 
 Streams one answer from Abdallah AI. The backend retrieves the knowledge-base chunks relevant
 to the question (hybrid vector + keyword search, see `docs/architecture.md`) and builds the
-prompt from `backend/app/agents/prompts/system_v3.md`, a small pinned identity context and those
+prompt from `backend/app/agents/prompts/system_v4.md`, a small pinned identity context and those
 chunks only. Cards are still chosen
 by the frontend's temporary keyword stub, not by the model (that arrives with step 6).
 
@@ -163,6 +164,85 @@ response is **HTTP 429** JSON with a `Retry-After` header, not a stream:
 Only valid requests count towards the limits (a 422 does not). Logs contain request id,
 language, model, token usage, latency, status and retrieval metadata (chunk ids, fused scores,
 latency), never the message text or the API key.
+
+## Voice
+
+Speech goes through provider adapters (`backend/app/voice/`): STT `fake | groq` (Whisper over
+the OpenAI-compatible `/audio/transcriptions`, reusing `LLM_BASE_URL`/`LLM_API_KEY`), TTS
+`fake | browser | elevenlabs`. With `browser` the backend produces no audio at all: the
+frontend speaks with the visitor's own `speechSynthesis`. Errors are JSON
+`{"detail": "<English, for developers>", "code": "<code>"}`; the frontend shows its own
+localized text per `code`.
+
+**Privacy:** audio is read into memory (size-capped) and parsed in memory (FastAPI's
+`UploadFile` is deliberately not used, since it spools parts over 1 MB to a temp file), sent to
+the STT provider and dropped when the request ends. It is never written to disk or logged.
+Transcripts are not logged either; logs carry bytes, duration, language and latency only.
+
+### `GET /api/v1/voice/config`
+
+```json
+{ "stt": { "provider": "groq", "max_seconds": 30, "max_bytes": 2097152 },
+  "tts": { "provider": "elevenlabs", "max_chars": 600 } }
+```
+
+`stt.provider` is `none` when the STT provider is misconfigured (voice input is then hidden
+behind a "not available" message; text keeps working). `tts.provider` reports `browser` when
+ElevenLabs is selected but has no key. No secrets, models or voice ids are exposed.
+
+### `POST /api/v1/voice/transcribe`
+
+`multipart/form-data` with exactly these fields (anything else → 422 `invalid_request`):
+
+| Field | Rules |
+|---|---|
+| `audio` | file; webm/opus, ogg, wav or m4a; **≤ 2 MB** and **≤ 30 s**. The container is sniffed from its bytes and must match the declared type |
+| `language_hint` | `auto` (default), `en` or `ar` |
+
+Response `200`: `{"text": "What projects has Abdallah built with RAG?", "language": "en", "duration_ms": 2808}`.
+
+- Duration is read from the container (WAV header, Ogg granule, WebM block timestamps, MP4
+  `mvhd`) **before** any paid call; if a container has no usable timing, the provider's
+  reported duration is checked afterwards.
+- `auto`: if Whisper detects a language other than English or Arabic (short clips are
+  sometimes taken for Persian or Urdu), the clip is transcribed once more in the language of
+  the returned script.
+- A vocabulary hint built from the knowledge base (name in both scripts, short project names,
+  frequent technologies; ≤ 500 characters) is sent as Whisper's `prompt`, so names such as
+  "عبدالله" and terms such as "RAG" are spelled correctly.
+- Empty, silent (every segment `no_speech_prob` > 0.6), shorter than 0.3 s, or known Whisper
+  silence hallucinations ("ترجمة نانسي قنقر", "Thanks for watching") → 422 `no_speech`.
+
+### `POST /api/v1/voice/speak`
+
+Request (strict): `{"text": "One answer sentence.", "language": "en"}`; `text` is trimmed,
+1–600 characters, `language` is `en` or `ar`. Response: a streamed `audio/mpeg` body
+(`Cache-Control: no-store`). The frontend calls it once per sentence as the answer streams.
+
+Before synthesis the text is cleaned for speech (`app/voice/text.py`): URLs and bare domains
+are dropped, email addresses become "his email" / "بريده الإلكتروني", markdown and
+`[source: …]` labels are removed; decimals (`97.15`) and dotted terms (`Node.js`) are kept.
+Nothing speakable left → 422 `nothing_to_say`.
+
+Errors before the first audio byte return JSON (and the browser voice takes over for the rest
+of that answer); a provider failure after audio started just ends the stream early.
+
+### Voice errors and limits
+
+| HTTP | `code` | Meaning |
+|---|---|---|
+| 413 | `too_large` / `too_long` | over 2 MB / over 30 s |
+| 415 | `unsupported_type` | not webm/ogg/wav/m4a, or bytes do not match the declared type |
+| 422 | `invalid_request`, `no_speech`, `nothing_to_say` | see above |
+| 429 | `rate_limited`, `daily_limit`, `daily_cap` | per-IP/global request limits (with `Retry-After`) |
+| 429 | `tts_quota` | the daily character budget is used up, or ElevenLabs reported its quota exhausted (server voice then stays off until the next UTC day) |
+| 503 | `stt_unavailable` / `tts_unavailable` | provider down, misconfigured, or (`speak`) TTS is `browser` |
+
+| Limit (setting, default) | Applies to |
+|---|---|
+| `VOICE_RATE_PER_MINUTE`, 6 | transcribe, per IP; daily limits shared with chat (`CHAT_RATE_PER_DAY`, `CHAT_MAX_REQUESTS_PER_DAY`) |
+| `TTS_RATE_PER_MINUTE`, 40 | speak, per IP (one call per sentence) |
+| `TTS_MAX_CHARS_PER_DAY`, 20000 | speak, all visitors per UTC day, counted on the cleaned text; failed calls are refunded |
 
 ## UI actions (allowlist)
 

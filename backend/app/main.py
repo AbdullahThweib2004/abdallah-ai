@@ -14,6 +14,9 @@ from app.rag.identity import build_identity_context
 from app.rag.service import build_retriever
 from app.services.knowledge_service import load_knowledge_service
 from app.services.rate_limit import InMemoryRateLimiter, RateLimiter
+from app.services.voice_service import CharBudget, build_vocabulary
+from app.voice.base import STTProvider, TTSProvider, VoiceConfigError
+from app.voice.factory import build_stt, build_tts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,8 +27,10 @@ def create_app(
     *,
     llm_provider: LLMProvider | None = None,
     rate_limiter: RateLimiter | None = None,
+    stt_provider: STTProvider | None = None,
+    tts_provider: TTSProvider | None = None,
 ) -> FastAPI:
-    """App factory. Tests may inject an LLM provider and a rate limiter."""
+    """App factory. Tests may inject providers (LLM, STT, TTS) and a rate limiter."""
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -52,9 +57,36 @@ def create_app(
         app.state.llm = llm_provider or owned_provider
         if app.state.llm:
             logger.info("LLM provider=%s model=%s", app.state.llm.name, app.state.llm.model)
+
+        # Voice: a misconfigured provider disables voice input (text keeps working) or falls
+        # back to the browser's own voice for output.
+        owned_voice: list[STTProvider | TTSProvider] = []
+        app.state.stt = stt_provider
+        if stt_provider is None:
+            try:
+                app.state.stt = build_stt(settings)
+                owned_voice.append(app.state.stt)
+            except VoiceConfigError as exc:
+                logger.error("Voice input disabled: %s", exc)
+        app.state.tts = tts_provider
+        if tts_provider is None:
+            try:
+                app.state.tts = build_tts(settings)
+                if app.state.tts:
+                    owned_voice.append(app.state.tts)
+            except VoiceConfigError as exc:
+                logger.error("Server voice disabled, using the browser voice: %s", exc)
+        app.state.stt_vocabulary = (
+            build_vocabulary(knowledge.profile, knowledge.list_projects()) if knowledge else ""
+        )
+        for name, provider in (("STT", app.state.stt), ("TTS", app.state.tts)):
+            if provider:
+                logger.info("%s provider=%s model=%s", name, provider.name, provider.model)
         yield
         if owned_provider:
             await owned_provider.aclose()
+        for provider in owned_voice:
+            await provider.aclose()
 
     app = FastAPI(title="Abdallah AI API", version=VERSION, lifespan=lifespan)
     app.state.settings = settings
@@ -62,11 +94,27 @@ def create_app(
     app.state.retriever = None
     app.state.identity = ""
     app.state.llm = None
+    app.state.stt = None
+    app.state.tts = None
+    app.state.stt_vocabulary = ""
     app.state.rate_limiter = rate_limiter or InMemoryRateLimiter(
         per_minute=settings.chat_rate_per_minute,
         per_day=settings.chat_rate_per_day,
         global_per_day=settings.chat_max_requests_per_day,
     )
+    # Every voice question also becomes a chat turn, so it shares the chat's daily limits.
+    app.state.voice_rate_limiter = InMemoryRateLimiter(
+        per_minute=settings.voice_rate_per_minute,
+        per_day=settings.chat_rate_per_day,
+        global_per_day=settings.chat_max_requests_per_day,
+    )
+    # One call per spoken sentence; the character budget is the real cost guard.
+    app.state.tts_rate_limiter = InMemoryRateLimiter(
+        per_minute=settings.tts_rate_per_minute,
+        per_day=settings.chat_rate_per_day * 10,
+        global_per_day=settings.chat_max_requests_per_day * 10,
+    )
+    app.state.tts_budget = CharBudget(settings.tts_max_chars_per_day)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.llm.base import LLMProvider
 from app.main import create_app
 from app.services.rate_limit import RateLimiter
+from app.voice.base import STTProvider, TTSProvider
 
 REAL_KNOWLEDGE_BASE = Path(__file__).resolve().parents[2] / "knowledge_base"
 
@@ -136,6 +137,10 @@ def make_settings(knowledge_base_dir: Path, **overrides: Any) -> Settings:
         # Offline hashing embedder and a throwaway index: no model downloads in tests.
         "rag_embedder": "fake",
         "rag_index_dir": Path(tempfile.mkdtemp(prefix="test-index-")),
+        # Offline speech providers; never a real key, even if one is exported in the shell.
+        "stt_provider": "fake",
+        "tts_provider": "fake",
+        "elevenlabs_api_key": None,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -146,7 +151,7 @@ def make_client() -> Iterator[Callable[..., TestClient]]:
     """Build a client for a knowledge base dir; runs the app lifespan.
 
     Keyword arguments are settings overrides, plus an optional `provider` (an LLMProvider
-    instance) and `rate_limiter`.
+    instance), `stt`/`tts` speech providers and `rate_limiter`.
     """
     clients: list[TestClient] = []
 
@@ -155,10 +160,18 @@ def make_client() -> Iterator[Callable[..., TestClient]]:
         *,
         provider: LLMProvider | None = None,
         rate_limiter: RateLimiter | None = None,
+        stt: STTProvider | None = None,
+        tts: TTSProvider | None = None,
         **overrides: Any,
     ) -> TestClient:
         settings = make_settings(knowledge_base_dir, **overrides)
-        app = create_app(settings, llm_provider=provider, rate_limiter=rate_limiter)
+        app = create_app(
+            settings,
+            llm_provider=provider,
+            rate_limiter=rate_limiter,
+            stt_provider=stt,
+            tts_provider=tts,
+        )
         client = TestClient(app)
         client.__enter__()
         clients.append(client)
