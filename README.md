@@ -7,8 +7,9 @@ with an AI-powered digital representative of Abdallah. The representative answer
 knowledge base, speaks with an authorized voice, and appears as a realistic animated avatar. It is
 clearly labelled as AI and never claims to be the real Abdallah.
 
-The project is built in stages, starting on a small budget. **Current stage: 2 – Knowledge base**: content
-templates for Abdallah to fill in, plus a strict validator. There are no AI features yet. See [`CLAUDE.md`](CLAUDE.md) for the full build
+The project is built in stages, starting on a small budget. **Current stage: 4 – Text chat** (next up).
+Done so far: the reviewed knowledge base, a read-only content API, and a bilingual (English/Arabic,
+RTL) static portfolio site. There are no AI features yet. See [`CLAUDE.md`](CLAUDE.md) for the full build
 order and project rules, and [`docs/`](docs/) for the architecture, API and requirements.
 
 ## Repository layout
@@ -30,7 +31,7 @@ docs/             Specification, architecture, API and requirements
 
 ```bash
 cp .env.example .env                       # backend settings
-cp .env.example frontend/.env.local        # frontend settings (only NEXT_PUBLIC_* values are used)
+cp .env.example frontend/.env.local        # frontend settings (API_BASE_URL, NEXT_PUBLIC_*, SITE_URL)
 ```
 
 ## Run the backend
