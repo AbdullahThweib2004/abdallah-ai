@@ -41,6 +41,24 @@ _MARKDOWN = re.compile(
 )
 
 
+# Checks applied to EVERY answer (prompt v4 rules), on top of each case's own checks.
+# Praise/evaluation words the knowledge base never uses: the answer must state facts only.
+PRAISE_WORDS = [
+    "impressive", "deep understanding", "passionate", "passion for", "talented", "exceptional",
+    "outstanding", "remarkable", "brilliant", "highly skilled", "showcases his",
+    "شغف", "مبهر", "رائع", "متميز", "استثنائي", "موهوب", "مذهل", "فهم عميق", "عبقري",
+]  # fmt: skip
+# Known Arabic mistakes: the name must be the one word عبدالله; jussive of بُني is تُبنَ.
+ARABIC_MISTAKES = ["عبد الله", "لم تُبنى"]
+# A Latin letter directly touching an Arabic letter ("endorsه", "وReact", "بـMCP").
+# Arabic LETTERS only (incl. tatweel): Arabic punctuation such as "،" after an English word is fine.
+_AR_LETTER = "[\u0621-\u064a\u0671-\u06d3]"
+_GLUED = re.compile(f"{_AR_LETTER}[A-Za-z]|[A-Za-z]{_AR_LETTER}")
+_URL = re.compile(r"https?://|www\.")
+# Unfilled template text copied from a prompt ("<project name>", "<technology>").
+_PLACEHOLDER = re.compile(r"<[^<>]{2,40}>")
+
+
 def normalize(text: str) -> str:
     text = _SPACES.sub(" ", _HYPHENS.sub("-", _DIACRITICS.sub("", text)))
     return text.casefold().replace("’", "'")
@@ -76,6 +94,15 @@ def check(case: dict, answer: str) -> list[str]:
             reasons.append(f"contains forbidden {needle!r}")
     if _MARKDOWN.search(answer):
         reasons.append("uses markdown")
+    reasons += [f"praise {word!r}" for word in PRAISE_WORDS if normalize(word) in text]
+    reasons += [f"Arabic mistake {m!r}" for m in ARABIC_MISTAKES if normalize(m) in text]
+    if glued := _GLUED.search(answer):
+        start = max(glued.start() - 6, 0)
+        reasons.append(f"Latin glued to Arabic {answer[start : glued.end() + 6]!r}")
+    if _URL.search(answer):
+        reasons.append("reads out a URL")
+    if placeholder := _PLACEHOLDER.search(answer):
+        reasons.append(f"template placeholder {placeholder.group()!r}")
     return reasons
 
 

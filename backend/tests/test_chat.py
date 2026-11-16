@@ -147,7 +147,8 @@ def test_reply_language_instruction_is_appended_to_the_system_prompt(
     system = fake.calls[0][0]["content"]
     assert system.endswith("Reply in Arabic.")
     assert system.startswith('You are "Abdallah AI"')
-    assert "Never use markdown" in system  # the current prompt version (v2) is used
+    assert "Never use markdown" in system
+    assert "Never add praise" in system and "عبدالله ذويب" in system  # prompt v4 is in use
 
 
 # --- failures --------------------------------------------------------------------------------

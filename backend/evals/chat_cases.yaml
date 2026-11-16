@@ -7,7 +7,9 @@
 #   must_not_include:  none of these strings appears in the answer
 #   language:          en | ar, detected from the answer text
 #   history:           previous turns sent with the question (to test follow-ups)
-# Every answer is also checked for markdown (bold, headings, lists, tables): it must be plain text.
+# Every answer is also checked (globally, in run_chat.py) for: markdown; praise words such as
+# "impressive"/"شغف"; the Arabic mistakes "عبد الله" and "لم تُبنى"; Latin letters glued to
+# Arabic letters; and URLs (answers are spoken; the page shows the links).
 
 cases:
   # --- English ---------------------------------------------------------------------------
