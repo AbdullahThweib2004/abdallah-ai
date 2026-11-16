@@ -46,7 +46,12 @@ class AnthropicProvider:
         await self._client.aclose()
 
     async def stream(
-        self, messages: list[ChatMessage], *, max_tokens: int, temperature: float
+        self,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: str | None = None,  # not used: no equivalent setting here
     ) -> AsyncIterator[LLMChunk]:
         system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
         body: dict[str, Any] = {

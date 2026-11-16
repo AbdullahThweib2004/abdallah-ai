@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 
 import httpx
@@ -13,6 +14,7 @@ from app.llm.base import LLMRateLimitError, LLMUnavailableError
 from app.llm.fake import FakeProvider
 from app.llm.openai_compatible import OpenAICompatibleProvider
 from app.models.chat import ChatRequest
+from app.rag.retriever import Retriever
 from app.services.chat_messages import MESSAGES
 from app.services.chat_service import chat_events
 from app.services.language import detect_language
@@ -103,7 +105,7 @@ def test_sse_events_arrive_in_order_with_expected_shape(client: TestClient) -> N
     assert {name for name, _ in stream[1:-1]} == {"token"}
     start, done = stream[0][1], stream[-1][1]
     assert set(start) == {"request_id", "language"} and start["language"] == "en"
-    assert set(done) == {"usage", "latency_ms"}
+    assert set(done) == {"usage", "latency_ms", "sources"}
     assert done["usage"]["output_tokens"] > 0
     answer = "".join(data["text"] for name, data in stream if name == "token")
     assert "demo" in answer
@@ -263,24 +265,59 @@ def test_invalid_requests_do_not_consume_the_limit(make_client, fixture_kb: Path
 # --- knowledge section -----------------------------------------------------------------------
 
 
-def test_system_prompt_contains_only_approved_knowledge(make_client, fixture_kb: Path) -> None:
+def test_prompt_contains_identity_and_only_retrieved_approved_chunks(
+    make_client, fixture_kb: Path
+) -> None:
     draft = fixture_kb / "projects" / "draft.md"
     draft.write_text(draft.read_text(encoding="utf-8") + "\nDRAFT-ONLY-MARKER\n", encoding="utf-8")
     private = fixture_kb / "_private"
     private.mkdir()
-    (private / "never_public.md").write_text("PRIVATE-PHONE-MARKER", encoding="utf-8")
+    (private / "never_public.md").write_text("PRIVATE-PHONE-MARKER Alpha", encoding="utf-8")
     fake = FakeProvider()
-    client = make_client(fixture_kb, provider=fake)
+    client = make_client(fixture_kb, provider=fake, rag_top_k=2)
 
-    client.post(URL, json={"message": "hi"})
+    client.post(URL, json={"message": "What problem does Alpha solve?"})
     system = fake.calls[0][0]["content"]
+    sources = re.findall(r"^\[source: ([^\]]+)\]$", system, flags=re.MULTILINE)
 
-    assert "[about] About Test Person" in system
-    assert "Technologies: Python, FastAPI" in system
-    assert "## Problem\nA **real** problem." in system
+    assert sources[0] == "about › Identity"  # pinned identity always comes first
+    assert "Name: Test Person (Arabic spelling: شخص)" in system
+    assert len(sources) == 3  # identity + top-2 retrieved chunks, nothing else
+    assert "alpha › Problem" in sources
+    assert "Alpha — Problem\nA **real** problem." in system  # chunk text with its context prefix
     assert "See frontmatter" not in system
     assert "DRAFT-ONLY-MARKER" not in system and "secret-draft" not in system
     assert "PRIVATE-PHONE-MARKER" not in system
+
+
+def test_done_event_lists_deduplicated_sources(make_client, fixture_kb: Path) -> None:
+    client = make_client(fixture_kb, provider=FakeProvider(), rag_top_k=4)
+
+    done = events(client.post(URL, json={"message": "Tell me about Gamma and its problem"}))[-1]
+
+    assert done[0] == "done"
+    sources = done[1]["sources"]
+    assert sources and len(sources) == len({(s["doc_id"], s["heading"]) for s in sources})
+    gamma = next(s for s in sources if s["doc_id"] == "gamma")
+    assert gamma == {
+        "doc_id": "gamma",
+        "title": "Gamma",
+        "heading": gamma["heading"],
+        "project_id": "gamma",
+    }
+    assert all("project_id" not in s for s in sources if s["doc_id"] in {"about", "experience"})
+
+
+def test_arabic_reasoning_effort_override_is_used_for_arabic_only(
+    make_client, fixture_kb: Path
+) -> None:
+    fake = FakeProvider()
+    client = make_client(fixture_kb, provider=fake, llm_reasoning_effort_ar="medium")
+
+    client.post(URL, json={"message": "Where did he study?"})
+    client.post(URL, json={"message": "أين درس؟"})
+
+    assert fake.reasoning_efforts == [None, "medium"]  # None = provider default
 
 
 # --- secrets ---------------------------------------------------------------------------------
@@ -341,7 +378,8 @@ async def test_client_disconnect_closes_provider_stream_and_is_logged(
         "req-1",
         ChatRequest(message="hi"),
         provider=provider,
-        system_prompt="rules",
+        retriever=Retriever([], index=None, embedder=None, glossary={}),
+        identity="",
         settings=make_settings(fixture_kb),
     )
 
@@ -356,26 +394,6 @@ async def test_client_disconnect_closes_provider_stream_and_is_logged(
         await task
 
     assert "request_id=req-1" in caplog.text and "status=client_disconnected" in caplog.text
-
-
-def test_compact_knowledge_mode_is_smaller_and_keeps_the_essentials(
-    make_client, fixture_kb: Path
-) -> None:
-    prompts = {}
-    for mode in ["full", "compact"]:
-        fake = FakeProvider()
-        make_client(fixture_kb, provider=fake, llm_knowledge_mode=mode).post(
-            URL, json={"message": "hi"}
-        )
-        prompts[mode] = fake.calls[0][0]["content"]
-
-    full, compact = prompts["full"], prompts["compact"]
-    assert len(compact) < len(full)
-    assert "## One-line summary\nSummary of Alpha." in compact  # project essentials stay
-    assert "## Problem" in full and "## Problem" not in compact  # long sections go
-    assert "Test Person | شخص" in compact  # the names table stays (Arabic spellings)
-    assert "تضمينات" in full and "تضمينات" not in compact  # the rest of the glossary goes
-    assert "[public-links] Links" in compact and "[experience]" in compact
 
 
 def test_markdown_emphasis_is_stripped_from_the_stream(make_client, fixture_kb: Path) -> None:

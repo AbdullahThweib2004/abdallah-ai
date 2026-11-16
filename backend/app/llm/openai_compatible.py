@@ -77,12 +77,20 @@ class OpenAICompatibleProvider:
         await self._client.aclose()
 
     async def stream(
-        self, messages: list[ChatMessage], *, max_tokens: int, temperature: float
+        self,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: str | None = None,
     ) -> AsyncIterator[LLMChunk]:
+        effort = reasoning_effort or self._reasoning_effort
         models = [self.model] + ([self._fallback_model] if self._fallback_model else [])
         for attempt, model in enumerate(models):
             try:
-                async for chunk in self._stream_model(model, messages, max_tokens, temperature):
+                async for chunk in self._stream_model(
+                    model, messages, max_tokens, temperature, effort
+                ):
                     yield chunk
                 return
             except _FailedBeforeFirstTokenError as failure:
@@ -96,7 +104,12 @@ class OpenAICompatibleProvider:
                 )
 
     async def _stream_model(
-        self, model: str, messages: list[ChatMessage], max_tokens: int, temperature: float
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: str | None,
     ) -> AsyncIterator[LLMChunk]:
         body: dict[str, Any] = {
             "model": model,
@@ -106,8 +119,8 @@ class OpenAICompatibleProvider:
             "temperature": temperature,
             "stream_options": {"include_usage": True},
         }
-        if self._reasoning_effort:
-            body["reasoning_effort"] = self._reasoning_effort
+        if reasoning_effort:
+            body["reasoning_effort"] = reasoning_effort
 
         streamed_text = False
         usage: Usage | None = None

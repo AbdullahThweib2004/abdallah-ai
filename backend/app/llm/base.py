@@ -54,9 +54,18 @@ class LLMProvider(Protocol):
     model: str
 
     def stream(
-        self, messages: list[ChatMessage], *, max_tokens: int, temperature: float
+        self,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: str | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        """Stream the answer text only (never reasoning), ending with a usage chunk."""
+        """Stream the answer text only (never reasoning), ending with a usage chunk.
+
+        `reasoning_effort` overrides the provider's default for this call (ignored by
+        providers without a reasoning setting).
+        """
         ...
 
     async def aclose(self) -> None: ...

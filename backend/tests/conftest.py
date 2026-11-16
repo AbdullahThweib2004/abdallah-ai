@@ -1,3 +1,4 @@
+import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -97,7 +98,7 @@ def write_fixture_kb(root: Path) -> Path:
             "glossary",
             "Terms",
             "## Names and places\n| English | Arabic | Notes |\n|---|---|---|\n"
-            "| Test Person | شخص | |\n\n"
+            "| Test Person | شخص | |\n| Alpha | ألفا | |\n\n"
             "## Technical terms\n| English | Arabic | Notes |\n|---|---|---|\n"
             "| Embeddings | تضمينات | |\n",
         ),
@@ -132,6 +133,9 @@ def make_settings(knowledge_base_dir: Path, **overrides: Any) -> Settings:
         "cors_origins": ["http://localhost:3000"],
         "knowledge_base_dir": knowledge_base_dir,
         "llm_provider": "fake",
+        # Offline hashing embedder and a throwaway index: no model downloads in tests.
+        "rag_embedder": "fake",
+        "rag_index_dir": Path(tempfile.mkdtemp(prefix="test-index-")),
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

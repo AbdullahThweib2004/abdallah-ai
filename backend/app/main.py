@@ -5,12 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.agents.prompt import build_system_prompt
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.version import VERSION
 from app.llm.base import LLMConfigError, LLMProvider
 from app.llm.factory import build_provider
+from app.rag.identity import build_identity_context
+from app.rag.service import build_retriever
 from app.services.knowledge_service import load_knowledge_service
 from app.services.rate_limit import InMemoryRateLimiter, RateLimiter
 
@@ -32,10 +33,10 @@ def create_app(
         # Loaded once; None means the content endpoints answer 503 while the API stays up.
         knowledge = load_knowledge_service(settings.knowledge_base_dir)
         app.state.knowledge = knowledge
-        app.state.system_prompt = (
-            build_system_prompt(knowledge.documents, settings.llm_knowledge_mode)
-            if knowledge
-            else None
+        # The vector index is rebuilt only when the approved knowledge (or model) changed.
+        app.state.retriever = build_retriever(knowledge.documents, settings) if knowledge else None
+        app.state.identity = build_identity_context(
+            knowledge.profile if knowledge else None, knowledge.contact() if knowledge else None
         )
 
         owned_provider = None
@@ -54,7 +55,8 @@ def create_app(
     app = FastAPI(title="Abdallah AI API", version=VERSION, lifespan=lifespan)
     app.state.settings = settings
     app.state.knowledge = None
-    app.state.system_prompt = None
+    app.state.retriever = None
+    app.state.identity = ""
     app.state.llm = None
     app.state.rate_limiter = rate_limiter or InMemoryRateLimiter(
         per_minute=settings.chat_rate_per_minute,

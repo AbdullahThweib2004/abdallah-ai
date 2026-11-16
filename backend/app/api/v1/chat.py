@@ -41,7 +41,8 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse | JSONR
         uuid.uuid4().hex,
         body,
         provider=request.app.state.llm,
-        system_prompt=request.app.state.system_prompt,
+        retriever=request.app.state.retriever,
+        identity=request.app.state.identity,
         settings=request.app.state.settings,
     )
     return StreamingResponse(

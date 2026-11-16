@@ -37,11 +37,18 @@ class FakeProvider:
         self._error_after_tokens = error_after_tokens
         self._hang_seconds = hang_seconds
         self.calls: list[list[ChatMessage]] = []
+        self.reasoning_efforts: list[str | None] = []
 
     async def stream(
-        self, messages: list[ChatMessage], *, max_tokens: int, temperature: float
+        self,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: str | None = None,
     ) -> AsyncIterator[LLMChunk]:
         self.calls.append(messages)
+        self.reasoning_efforts.append(reasoning_effort)
         if self._hang_seconds:
             await asyncio.sleep(self._hang_seconds)
         if self._error and self._error_after_tokens is None:

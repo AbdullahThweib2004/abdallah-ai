@@ -1,7 +1,8 @@
 """Streams one chat turn as Server-Sent Events.
 
-Events: `start` {request_id, language} → `token` {text}… → `done` {usage, latency_ms}, or an
-`error` {code, message} at any point. The visitor's text is never logged.
+Retrieve the chunks relevant to the question, build the prompt from them, stream the answer.
+Events: `start` {request_id, language} → `token` {text}… → `done` {usage, latency_ms, sources},
+or an `error` {code, message} at any point. The visitor's text is never logged.
 """
 
 import asyncio
@@ -11,6 +12,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.agents.prompt import build_system_prompt
 from app.core.config import Settings
 from app.llm.base import (
     ChatMessage,
@@ -21,6 +23,7 @@ from app.llm.base import (
     Usage,
 )
 from app.models.chat import ChatRequest
+from app.rag.retriever import RetrievalResult, Retriever
 from app.services.chat_messages import ErrorCode, message
 from app.services.language import Language, detect_language
 
@@ -38,6 +41,10 @@ def sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def previous_user_message(request: ChatRequest) -> str | None:
+    return next((turn.content for turn in reversed(request.history) if turn.role == "user"), None)
+
+
 def build_messages(
     system_prompt: str, request: ChatRequest, language: Language
 ) -> list[ChatMessage]:
@@ -49,12 +56,39 @@ def build_messages(
     return messages
 
 
+def sources_of(retrieval: RetrievalResult) -> list[dict[str, str]]:
+    """Deduplicated sources for the UI (the retrieved set; the pinned identity is excluded)."""
+    sources: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for hit in retrieval.chunks:
+        key = (hit.chunk.doc_id, hit.chunk.heading)
+        if key in seen:
+            continue
+        seen.add(key)
+        source = {
+            "doc_id": hit.chunk.doc_id,
+            "title": hit.chunk.title,
+            "heading": hit.chunk.heading,
+        }
+        if hit.chunk.project_id:
+            source["project_id"] = hit.chunk.project_id
+        sources.append(source)
+    return sources
+
+
+def reasoning_effort_for(language: Language, settings: Settings) -> str | None:
+    if language == "ar" and settings.llm_reasoning_effort_ar:
+        return settings.llm_reasoning_effort_ar
+    return None  # the provider's default (LLM_REASONING_EFFORT)
+
+
 async def chat_events(
     request_id: str,
     request: ChatRequest,
     *,
     provider: LLMProvider | None,
-    system_prompt: str | None,
+    retriever: Retriever | None,
+    identity: str,
     settings: Settings,
 ) -> AsyncIterator[str]:
     language = detect_language(request.message, request.ui_language)
@@ -68,16 +102,31 @@ async def chat_events(
 
     yield sse("start", {"request_id": request_id, "language": language})
 
-    if provider is None or system_prompt is None:
+    if provider is None or retriever is None:
         status = "unavailable"
         yield error("unavailable")
         _log(request_id, language, model, usage, started, status)
         return
 
+    # Embedding a query is CPU work: keep it off the event loop.
+    retrieval = await asyncio.to_thread(
+        retriever.retrieve, request.message, previous_user_message(request)
+    )
+    logger.info(
+        "retrieval request_id=%s latency_ms=%d chunks=%s dropped_for_budget=%d%s",
+        request_id,
+        retrieval.latency_ms,
+        [f"{hit.chunk.id}:{hit.score:.4f}" for hit in retrieval.chunks],
+        retrieval.dropped_for_budget,
+        f" notes={retrieval.notes}" if retrieval.notes else "",
+    )
+    system_prompt = build_system_prompt(identity, retrieval.chunks)
+
     stream = provider.stream(
         build_messages(system_prompt, request, language),
         max_tokens=settings.llm_max_output_tokens,
         temperature=settings.llm_temperature,
+        reasoning_effort=reasoning_effort_for(language, settings),
     )
     try:
         while True:
@@ -96,6 +145,7 @@ async def chat_events(
             {
                 "usage": {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens},
                 "latency_ms": round((time.perf_counter() - started) * 1000),
+                "sources": sources_of(retrieval),
             },
         )
     except (TimeoutError, LLMTimeoutError):
