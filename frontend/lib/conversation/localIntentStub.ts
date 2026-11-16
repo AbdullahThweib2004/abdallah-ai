@@ -18,13 +18,13 @@ const KEYWORDS: [Category, string[]][] = [
 ];
 
 const CATEGORY_WORDS = new Set(KEYWORDS.flatMap(([, words]) => words));
-const ARABIC = /[؀-ۿ]/;
+const ARABIC = /[\u0600-\u06FF]/;
 
 /** Lowercase; strip Arabic diacritics/tatweel and unify letter variants (أإآ→ا, ة→ه, ى→ي). */
 export function normalize(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
     .replace(/[أإآ]/g, "ا")
     .replace(/ة/g, "ه")
     .replace(/ى/g, "ي");

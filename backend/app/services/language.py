@@ -4,7 +4,7 @@ from typing import Literal
 Language = Literal["en", "ar"]
 
 _WORD = re.compile(r"[^\W\d_]+")
-_ARABIC = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")
+_ARABIC = re.compile(r"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]")
 
 # Share of Arabic-script words above which a message counts as Arabic. Counting words (not
 # letters) keeps "شو خبرته في FastAPI و Docker؟" Arabic despite the long English terms.

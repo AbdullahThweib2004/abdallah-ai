@@ -28,6 +28,11 @@ logger = logging.getLogger("app.chat")
 
 LANGUAGE_NAMES = {"en": "English", "ar": "Arabic"}
 
+# Answers are plain text: shown as subtitles now, spoken in step 7. Despite the prompt, models
+# occasionally emit markdown emphasis or code marks; drop those characters before they reach
+# the visitor. Removing them per character also handles "**" split across two tokens.
+_MARKDOWN_MARKERS = str.maketrans("", "", "*`")
+
 
 def sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -81,8 +86,9 @@ async def chat_events(
                 chunk = await asyncio.wait_for(anext(stream), timeout=settings.llm_timeout_seconds)
             except StopAsyncIteration:
                 break
-            if chunk.text:
-                yield sse("token", {"text": chunk.text})
+            text = chunk.text.translate(_MARKDOWN_MARKERS)
+            if text:
+                yield sse("token", {"text": text})
             if chunk.usage:
                 usage, model = chunk.usage, chunk.model or model
         yield sse(

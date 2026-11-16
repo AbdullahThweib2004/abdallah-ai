@@ -96,7 +96,10 @@ def write_fixture_kb(root: Path) -> Path:
             "terms-ar-en",
             "glossary",
             "Terms",
-            "## Names\n| English | Arabic | Notes |\n|---|---|---|\n| Test Person | شخص | |\n",
+            "## Names and places\n| English | Arabic | Notes |\n|---|---|---|\n"
+            "| Test Person | شخص | |\n\n"
+            "## Technical terms\n| English | Arabic | Notes |\n|---|---|---|\n"
+            "| Embeddings | تضمينات | |\n",
         ),
         "projects/alpha.md": _project("alpha", "Alpha", featured=False, order=1),
         "projects/beta.md": _project("beta", "Beta", featured=True, order=2),

@@ -32,7 +32,11 @@ def create_app(
         # Loaded once; None means the content endpoints answer 503 while the API stays up.
         knowledge = load_knowledge_service(settings.knowledge_base_dir)
         app.state.knowledge = knowledge
-        app.state.system_prompt = build_system_prompt(knowledge.documents) if knowledge else None
+        app.state.system_prompt = (
+            build_system_prompt(knowledge.documents, settings.llm_knowledge_mode)
+            if knowledge
+            else None
+        )
 
         owned_provider = None
         if llm_provider is None:

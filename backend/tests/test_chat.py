@@ -145,6 +145,7 @@ def test_reply_language_instruction_is_appended_to_the_system_prompt(
     system = fake.calls[0][0]["content"]
     assert system.endswith("Reply in Arabic.")
     assert system.startswith('You are "Abdallah AI"')
+    assert "Never use markdown" in system  # the current prompt version (v2) is used
 
 
 # --- failures --------------------------------------------------------------------------------
@@ -355,3 +356,34 @@ async def test_client_disconnect_closes_provider_stream_and_is_logged(
         await task
 
     assert "request_id=req-1" in caplog.text and "status=client_disconnected" in caplog.text
+
+
+def test_compact_knowledge_mode_is_smaller_and_keeps_the_essentials(
+    make_client, fixture_kb: Path
+) -> None:
+    prompts = {}
+    for mode in ["full", "compact"]:
+        fake = FakeProvider()
+        make_client(fixture_kb, provider=fake, llm_knowledge_mode=mode).post(
+            URL, json={"message": "hi"}
+        )
+        prompts[mode] = fake.calls[0][0]["content"]
+
+    full, compact = prompts["full"], prompts["compact"]
+    assert len(compact) < len(full)
+    assert "## One-line summary\nSummary of Alpha." in compact  # project essentials stay
+    assert "## Problem" in full and "## Problem" not in compact  # long sections go
+    assert "Test Person | شخص" in compact  # the names table stays (Arabic spellings)
+    assert "تضمينات" in full and "تضمينات" not in compact  # the rest of the glossary goes
+    assert "[public-links] Links" in compact and "[experience]" in compact
+
+
+def test_markdown_emphasis_is_stripped_from_the_stream(make_client, fixture_kb: Path) -> None:
+    fake = FakeProvider(answer="The **AI Developer Assistant** uses `RAG` * and * MCP.")
+    client = make_client(fixture_kb, provider=fake)
+
+    stream = events(client.post(URL, json={"message": "hi"}))
+
+    answer = "".join(data["text"] for name, data in stream if name == "token")
+    assert answer == "The AI Developer Assistant uses RAG  and  MCP."
+    assert all(data["text"] for name, data in stream if name == "token")  # no empty tokens

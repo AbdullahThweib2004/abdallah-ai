@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None
     llm_model: str | None = None
     llm_fallback_model: str | None = None
+    # TEMPORARY until step 5 (RAG): `compact` sends a shorter KNOWLEDGE section so a request
+    # fits small tokens-per-minute limits (Groq free tier: 8K TPM).
+    llm_knowledge_mode: Literal["full", "compact"] = "full"
     # Sent only when set (gpt-oss / o-series); leave empty for models without reasoning.
     llm_reasoning_effort: Literal["low", "medium", "high"] | None = "low"
     llm_max_output_tokens: int = Field(default=500, ge=1, le=8000)
