@@ -3,9 +3,9 @@ id: ai-agent-security-platform
 type: project
 title: "AI Agent Security & Control Platform"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [ai-agents, security, a2a, forensics, graph]
 project_status: completed
 technologies: [Python, FastAPI, Pydantic, PostgreSQL, SQLAlchemy, Alembic, Neo4j, React, Vite, Tailwind CSS, Docker, GitHub Actions]

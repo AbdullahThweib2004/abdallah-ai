@@ -3,9 +3,9 @@ id: terms-ar-en
 type: glossary
 title: "Arabic and English Terms"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [glossary, arabic]
 ---
 # Arabic and English Terms

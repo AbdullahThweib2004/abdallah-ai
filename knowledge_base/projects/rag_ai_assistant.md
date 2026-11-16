@@ -3,9 +3,9 @@ id: rag-ai-assistant
 type: project
 title: "RAG AI Assistant: Chat with Your Documents"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [rag, llm, documents, chromadb]
 project_status: completed
 technologies: [Python, LangChain, ChromaDB, OpenAI Embeddings, OpenRouter, FastAPI, React, TypeScript, Vite, Tailwind CSS]

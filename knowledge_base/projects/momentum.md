@@ -3,9 +3,9 @@ id: momentum
 type: project
 title: "Momentum: LinkedIn Content Assistant"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [nextjs, supabase, content, productivity]
 project_status: in_progress
 technologies: [Next.js, TypeScript, Tailwind CSS, shadcn/ui, Supabase, PostgreSQL, Recharts, Vercel]

@@ -3,9 +3,9 @@ id: experience
 type: profile
 title: "Practical Training at Bank of Palestine"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [experience, bank-of-palestine, internship]
 ---
 <!--

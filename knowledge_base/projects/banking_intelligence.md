@@ -3,9 +3,9 @@ id: banking-intelligence
 type: project
 title: "AI-Powered Banking Intelligence Platform"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [banking, rag, llm, ocr, credit-risk, graduation-project]
 project_status: in_progress
 technologies: [React, TypeScript, Vite, Tailwind CSS, shadcn/ui, Supabase, PostgreSQL, pgvector, Supabase Edge Functions, FastAPI, Tesseract OCR, OpenCV, WeasyPrint, OpenRouter]

@@ -3,9 +3,9 @@ id: nawa-inference
 type: project
 title: "Nawa: Neural Network Inference Engine in C++"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [cpp, machine-learning, performance, simd, quantization]
 project_status: in_progress
 technologies: [C++20, CMake, GoogleTest, Google Benchmark, AVX2, FMA, Python, PyTorch, HTML, CSS, JavaScript, GitHub Actions]

@@ -3,9 +3,9 @@ id: ai-developer-assistant
 type: project
 title: "AI Developer Assistant (RAG + MCP)"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [rag, mcp, llm, developer-tools, security]
 project_status: completed
 technologies: [Python, FastAPI, Chroma, sentence-transformers, MCP Python SDK, Anthropic API, OpenAI-compatible APIs, React, TypeScript, Vite, Tailwind CSS, pytest, uv]

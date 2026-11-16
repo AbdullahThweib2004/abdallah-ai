@@ -3,9 +3,9 @@ id: smart-system
 type: project
 title: "Smart System: Local AI Developer Assistant (Desktop)"
 language: en
-status: draft
+status: approved
 visibility: public
-last_reviewed: null
+last_reviewed: 2026-11-16
 tags: [electron, desktop, developer-tools, local-ai]
 project_status: completed
 technologies: [Electron, React, TypeScript, Vite, node-pty, SQLite, Ollama]
