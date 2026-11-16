@@ -47,6 +47,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang={locale}
       dir={directionOf(locale)}
+      // Smooth scrolling (globals.css) for in-page anchors only, not for route transitions.
+      data-scroll-behavior="smooth"
       className={`${geistSans.variable} ${geistMono.variable} ${plexArabic.variable} h-full`}
     >
       <body className="flex min-h-full flex-col">

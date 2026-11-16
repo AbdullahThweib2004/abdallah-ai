@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+
+import { PageSkeleton } from "@/components/ui/Skeletons";
 import type { Metadata } from "next";
 
 import { AboutSection } from "@/components/profile/AboutSection";
@@ -18,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: getDictionary(await getLocale()).pages.aboutTitle };
 }
 
-export default async function AboutPage() {
+async function AboutContent() {
   const [locale, profile, contact] = await Promise.all([getLocale(), getProfile(), getContact()]);
   const t = getDictionary(locale);
 
@@ -53,5 +56,16 @@ export default async function AboutPage() {
         </div>
       </section>
     </>
+  );
+}
+
+
+// Request-time data (locale cookie, backend content) streams inside Suspense; the fallback is
+// the static shell, so navigations stay instant under cacheComponents.
+export default function AboutPage() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <AboutContent />
+    </Suspense>
   );
 }

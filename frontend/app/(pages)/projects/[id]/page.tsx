@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+
+import { PageSkeleton } from "@/components/ui/Skeletons";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,7 +28,7 @@ export async function generateMetadata({ params }: PageProps<"/projects/[id]">):
   };
 }
 
-export default async function ProjectPage({ params }: PageProps<"/projects/[id]">) {
+async function ProjectContent({ params }: { params: PageProps<"/projects/[id]">["params"] }) {
   const [{ id }, locale] = await Promise.all([params, getLocale()]);
   const t = getDictionary(locale);
   const result = await getProject(id);
@@ -105,4 +108,15 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
 
 function slug(text: string): string {
   return `section-${text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
+
+// Request-time data (locale cookie, backend content) streams inside Suspense; the fallback is
+// the static shell, so navigations stay instant under cacheComponents.
+export default function ProjectPage({ params }: PageProps<"/projects/[id]">) {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <ProjectContent params={params} />
+    </Suspense>
+  );
 }

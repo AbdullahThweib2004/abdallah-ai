@@ -1,3 +1,4 @@
+import { HomeSkeleton } from "@/components/ui/Skeletons";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Suspense } from "react";
@@ -9,7 +10,7 @@ import { getContact, getProfile, getProjects } from "@/services/content";
 
 const PORTRAIT = "/avatar/abdallah.jpg";
 
-export default async function Home() {
+async function HomeContent() {
   const [locale, profile, projects, contact] = await Promise.all([
     getLocale(),
     getProfile(),
@@ -29,6 +30,17 @@ export default async function Home() {
         contact={contact}
         portraitSrc={portraitSrc}
       />
+    </Suspense>
+  );
+}
+
+
+// Request-time data (locale cookie, backend content) streams inside Suspense; the fallback is
+// the static shell, so navigations stay instant under cacheComponents.
+export default function Home() {
+  return (
+    <Suspense fallback={<HomeSkeleton />}>
+      <HomeContent />
     </Suspense>
   );
 }
