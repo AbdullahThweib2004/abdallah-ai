@@ -41,13 +41,43 @@ FASTAPI APPLICATION BACKEND
 FRONTEND AUDIO + SYNCHRONIZED AVATAR + PROJECT UI
 ```
 
+## Chat and retrieval (implemented, steps 4–5)
+
+```
+POST /api/v1/chat {message, history, ui_language}
+  │
+  ├─ rate limiter (per IP + global daily cap) ── over limit → 429
+  ├─ language detection (share of Arabic-script words) → reply language
+  ├─ Retriever (app/rag)                                   ~100–150 ms on CPU
+  │    query = message (+ previous user message for follow-ups)
+  │    Arabic → English expansion (glossary + generic vocabulary)
+  │    ├─ vector search: multilingual-e5-large (ONNX via fastembed) → ChromaDB (cosine)
+  │    ├─ BM25 keyword search (exact names: Nawa, MCP, FastAPI…)
+  │    └─ Reciprocal Rank Fusion (ties share a rank) → top 6 → trim to 2,000 tokens
+  ├─ prompt = system_v3 rules + pinned identity (≤300 tokens) + retrieved chunks
+  │            each labeled [source: doc_id › heading]
+  ├─ LLM adapter (Groq gpt-oss-120b, fallback 20b) → stream answer text only
+  └─ SSE: start → token… → done {usage, latency_ms, sources} | error
+```
+
+- **Index**: one chunk per `##` section of each APPROVED document (sections over ~350 words
+  are split with 50-word overlap), prefixed with "title — heading". Project/contact frontmatter
+  becomes a "Project facts"/"Links" chunk. The glossary is not indexed (it drives query
+  expansion) and UI copy such as the greeting is excluded.
+- **Freshness**: ChromaDB lives in `chroma_data/`; its metadata holds a hash of chunks +
+  model + chunker version. Startup rebuilds only when that hash changes.
+- **Resilience**: if the embedding model cannot load, retrieval falls back to BM25 only; if
+  the knowledge base fails to load, chat returns a friendly `unavailable` error.
+- **Quality gates**: `evals/run_retrieval` (Recall@3/@6, MRR, EN/AR) and `evals/run_chat`
+  (24+ behaviour cases, real provider).
+
 ## Layers
 
 | Layer | Stack | Responsibilities |
 |---|---|---|
 | Frontend | Next.js (App Router), React, TypeScript, Tailwind | Layout, conversation controls, audio capture/playback, avatar display, project cards, responsive UI, RTL support |
 | Backend | Python, FastAPI, Pydantic | Session handling, request validation, rate limits, orchestration, action allowlist, provider adapters |
-| Knowledge | Markdown in `knowledge_base/` (source of truth), ChromaDB (vectors) | Approved, reviewed facts about Abdallah and his projects |
+| Knowledge | Markdown in `knowledge_base/` (source of truth), ChromaDB in `chroma_data/` (vectors, rebuilt from the Markdown) | Approved, reviewed facts about Abdallah and his projects |
 | Storage | SQLite (local dev), PostgreSQL later if needed | Sessions, project catalogue, approved links |
 
 ### Backend module map (`backend/app/`)
@@ -58,7 +88,8 @@ FRONTEND AUDIO + SYNCHRONIZED AVATAR + PROJECT UI
 | `core/` | Settings, versioning, shared infrastructure |
 | `models/` | Pydantic request/response schemas |
 | `agents/` | AI orchestrator, system prompt, action validation |
-| `rag/` | Document loading, chunking, embeddings, retrieval |
+| `rag/` | Chunking, embeddings (fastembed), ChromaDB index, hybrid retrieval, identity context |
+| `llm/` | Provider adapters (OpenAI-compatible, Anthropic, fake) behind `LLMProvider` |
 | `voice/` | STT and TTS adapters |
 | `avatar/` | Avatar provider adapters |
 | `database/` | Persistence (SQLite → PostgreSQL) |

@@ -97,9 +97,10 @@ Same fields as a list item, plus:
 
 ## `POST /api/v1/chat`
 
-Streams one answer from Abdallah AI. Until step 5 (RAG) the approved knowledge base is placed in
-the system prompt (`backend/app/agents/prompts/system_v2.md`), in full or, with the temporary
-`LLM_KNOWLEDGE_MODE=compact`, in a shortened form that fits small tokens-per-minute limits. Cards are still chosen
+Streams one answer from Abdallah AI. The backend retrieves the knowledge-base chunks relevant
+to the question (hybrid vector + keyword search, see `docs/architecture.md`) and builds the
+prompt from `backend/app/agents/prompts/system_v3.md`, a small pinned identity context and those
+chunks only. Cards are still chosen
 by the frontend's temporary keyword stub, not by the model (that arrives with step 6).
 
 Request (strict, unknown fields → 422):
@@ -127,7 +128,7 @@ Response: `text/event-stream`. Each event is `event: <name>` + `data: <json>`:
 |---|---|---|
 | `start` | `{"request_id": "…", "language": "en" \| "ar"}` | first; `language` is the reply language detected from the message (share of Arabic-script words ≥ 40 %), falling back to `ui_language` |
 | `token` | `{"text": "…"}` | zero or more; the answer text only (reasoning output is discarded server-side) |
-| `done` | `{"usage": {"input_tokens": n, "output_tokens": n}, "latency_ms": n}` | last, on success |
+| `done` | `{"usage": {…}, "latency_ms": n, "sources": [{"doc_id", "title", "heading", "project_id"?}]}` | last, on success; `sources` are the retrieved sections (deduplicated, `project_id` only for projects) |
 | `error` | `{"code": "unavailable" \| "timeout" \| "busy", "message": "…"}` | last, on failure; may follow some `token` events (keep the partial answer) |
 
 Token text is plain text: markdown emphasis and code marks (`*`, backticks) are stripped
@@ -143,7 +144,7 @@ event: token
 data: {"text": "Abdallah"}
 
 event: done
-data: {"usage": {"input_tokens": 9112, "output_tokens": 84}, "latency_ms": 1430}
+data: {"usage": {"input_tokens": 2105, "output_tokens": 84}, "latency_ms": 1430, "sources": [{"doc_id": "nawa-inference", "title": "Nawa: Neural Network Inference Engine in C++", "heading": "Results (only verified results)", "project_id": "nawa-inference"}]}
 ```
 
 Limits (in-memory per process; a shared store replaces it in step 10). When a limit is hit the
@@ -160,7 +161,8 @@ response is **HTTP 429** JSON with a `Retry-After` header, not a stream:
 | `daily_cap` | all visitors per UTC day (`CHAT_MAX_REQUESTS_PER_DAY`, 500) |
 
 Only valid requests count towards the limits (a 422 does not). Logs contain request id,
-language, model, token usage, latency and status, never the message text or the API key.
+language, model, token usage, latency, status and retrieval metadata (chunk ids, fused scores,
+latency), never the message text or the API key.
 
 ## UI actions (allowlist)
 
