@@ -1,3 +1,6 @@
+import type { HealthResponse } from "./types";
+
+// Browser-side base URL. Server components use services/content.ts instead.
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(
   /\/+$/,
   "",
@@ -29,11 +32,6 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
   return (await response.json()) as T;
 }
-
-export type HealthResponse = {
-  status: "ok";
-  version: string;
-};
 
 export function getHealth(init?: RequestInit): Promise<HealthResponse> {
   return apiFetch<HealthResponse>("/api/v1/health", init);
