@@ -223,6 +223,22 @@ body {
 .avatar-stage[data-state="speaking"] .avatar-wave-bar {
   transform: scaleY(1);
 }
+/* Live input level while listening: a ring that grows and brightens with the voice. */
+.avatar-ring-level {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.avatar-stage[data-state="listening"] .avatar-ring-level {
+  opacity: calc(0.25 + var(--level, 0) * 0.75);
+  transform: scale(calc(1 + var(--level, 0) * 0.08));
+}
+/* Real audio levels (set per frame from an AnalyserNode) replace the keyframe animation
+   (the extra [data-state] outranks the animation rule further down). */
+.avatar-stage[data-live="true"][data-state] .avatar-wave-bar {
+  animation: none;
+  transform: scaleY(var(--bar, 0.3));
+  transition: transform 80ms linear;
+}
 
 /* ---------------------------------------------------------------- card panel */
 

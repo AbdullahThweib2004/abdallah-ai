@@ -1,54 +1,71 @@
 "use client";
 
-import { type FormEvent, type Ref, useEffect, useRef, useState } from "react";
+import { type FormEvent, type Ref, useState } from "react";
 
+import type { VoicePhase } from "@/hooks/useVoice";
 import type { Dictionary } from "@/lib/i18n/config";
-
-const NOTICE_MS = 4000;
 
 type Props = {
   t: Dictionary;
   onSend: (text: string) => void;
-  /** While an answer streams, the send button becomes a Stop button. */
-  streaming: boolean;
+  /** While an answer streams or is spoken, the send button becomes a Stop button. */
+  busy: boolean;
   onStop: () => void;
   inputRef: Ref<HTMLInputElement>;
+  voice: {
+    phase: VoicePhase;
+    /** Milliseconds left in the last 5 s of a recording, else null. */
+    remainingMs: number | null;
+    /** A localized notice (mic blocked, nothing heard, …), or null. */
+    notice: string | null;
+    replies: boolean;
+    onToggleMic: () => void;
+    onToggleReplies: () => void;
+  };
 };
 
-export function Composer({ t, onSend, streaming, onStop, inputRef }: Props) {
+export function Composer({ t, onSend, busy, onStop, inputRef, voice }: Props) {
   const [value, setValue] = useState("");
-  const [voiceNotice, setVoiceNotice] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => clearTimeout(timer.current ?? undefined), []);
+  const { phase, remainingMs } = voice;
+  const listening = phase === "listening";
+  const transcribing = phase === "transcribing";
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (streaming || !value.trim()) return;
+    if (busy || !value.trim()) return;
     onSend(value);
     setValue("");
   }
 
-  function showVoiceNotice() {
-    setVoiceNotice(true);
-    clearTimeout(timer.current ?? undefined);
-    timer.current = setTimeout(() => setVoiceNotice(false), NOTICE_MS);
-  }
+  const seconds = remainingMs === null ? null : Math.ceil(remainingMs / 1000);
+  const status = voice.notice
+    ? voice.notice
+    : listening
+      ? t.voice.listening + (seconds !== null ? ` ${t.voice.countdown.replace("{s}", String(seconds))}` : "")
+      : transcribing
+        ? t.voice.transcribing
+        : "";
+  const showStop = busy || listening || transcribing;
 
   return (
     <div className="relative">
       <p
-        id="voice-notice"
+        id="voice-status"
         role="status"
-        className={`absolute inset-x-0 bottom-full mb-2 text-center text-xs text-accent transition-opacity ${
-          voiceNotice ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
+        className={`absolute inset-x-0 bottom-full mb-2 text-center text-xs transition-opacity ${
+          voice.notice ? "text-accent" : "text-mist-200"
+        } ${status ? "opacity-100" : "pointer-events-none opacity-0"}`}
       >
-        {voiceNotice ? t.conversation.voiceSoon : ""}
+        {status}
+        {seconds !== null && (
+          <span aria-hidden="true" className="ms-2 inline-grid size-5 place-items-center rounded-full bg-accent font-semibold text-accent-ink tabular-nums">
+            {seconds}
+          </span>
+        )}
       </p>
       <form
         onSubmit={submit}
-        className="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900 p-1.5 ps-5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)] focus-within:border-accent/60"
+        className="flex items-center gap-1 rounded-full border border-ink-700 bg-ink-900 p-1.5 ps-5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)] focus-within:border-accent/60 sm:gap-2"
       >
         <label htmlFor="composer-input" className="sr-only">
           {t.conversation.inputLabel}
@@ -65,28 +82,61 @@ export function Composer({ t, onSend, streaming, onStop, inputRef }: Props) {
         />
         <button
           type="button"
-          onClick={showVoiceNotice}
-          aria-label={t.conversation.mic}
-          aria-describedby="voice-notice"
-          className="grid size-10 shrink-0 place-items-center rounded-full text-mist-200 transition-colors hover:bg-ink-800 hover:text-mist-50"
+          onClick={voice.onToggleReplies}
+          aria-pressed={voice.replies}
+          aria-label={t.voice.replies}
+          title={t.voice.replies}
+          className={`grid size-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-ink-800 ${
+            voice.replies ? "text-accent" : "text-mist-400 hover:text-mist-50"
+          }`}
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+            {voice.replies ? (
+              <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+            ) : (
+              <path d="m16 9.5 5 5m0-5-5 5" />
+            )}
           </svg>
+        </button>
+        <button
+          type="button"
+          onClick={voice.onToggleMic}
+          disabled={transcribing}
+          aria-pressed={listening}
+          aria-label={listening ? t.voice.micStop : transcribing ? t.voice.micBusy : t.voice.micStart}
+          aria-describedby="voice-status voice-privacy"
+          title={t.voice.micStart}
+          className={`relative grid size-10 shrink-0 place-items-center rounded-full transition-colors disabled:cursor-wait ${
+            listening
+              ? "bg-accent text-accent-ink hover:bg-accent-strong"
+              : "text-mist-200 hover:bg-ink-800 hover:text-mist-50"
+          }`}
+        >
+          {listening && (
+            <span aria-hidden="true" className="absolute inset-0 animate-ping rounded-full bg-accent/40 motion-reduce:hidden" />
+          )}
+          {transcribing ? (
+            <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-mist-400 border-t-transparent motion-reduce:animate-none" />
+          ) : (
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="relative size-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
+            </svg>
+          )}
         </button>
         {/* One element for both roles so keyboard focus survives the switch. */}
         <button
-          type={streaming ? "button" : "submit"}
-          onClick={streaming ? onStop : undefined}
-          aria-label={streaming ? t.conversation.stop : t.conversation.send}
+          type={showStop ? "button" : "submit"}
+          onClick={showStop ? onStop : undefined}
+          aria-label={showStop ? t.conversation.stop : t.conversation.send}
           className={`grid size-10 shrink-0 place-items-center rounded-full transition-colors ${
-            streaming
+            showStop
               ? "border border-accent/60 bg-ink-800 text-accent hover:bg-ink-700"
               : "bg-accent text-accent-ink hover:bg-accent-strong"
           }`}
         >
-          {streaming ? (
+          {showStop ? (
             <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="currentColor">
               <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>

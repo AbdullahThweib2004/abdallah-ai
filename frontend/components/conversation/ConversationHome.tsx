@@ -4,8 +4,10 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AvatarStage } from "@/components/avatar/AvatarStage";
-import { type AnswerMessage, type Message, useConversation } from "@/hooks/useConversation";
+import { type AnswerMessage, type AvatarState, type Message, useConversation } from "@/hooks/useConversation";
+import { type AnswerListener, useVoice } from "@/hooks/useVoice";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
+import type { VoiceRepliesPreference } from "@/lib/voice/preferences";
 
 import { AnswerSubtitle } from "./AnswerSubtitle";
 import { CardBody, type CardData } from "./CardBody";
@@ -20,12 +22,23 @@ type Props = CardData & {
   t: Dictionary;
   locale: Locale;
   portraitSrc: string | null;
+  /** The speaker toggle as saved in its cookie (null: never chosen). */
+  voiceReplies: VoiceRepliesPreference;
 };
 
-export function ConversationHome({ t, locale, profile, projects, contact, portraitSrc }: Props) {
-  const conversation = useConversation(projects ?? [], locale);
-  const { card, messages, lastAssistant, lastUser, avatar, streaming } = conversation;
+export function ConversationHome({ t, locale, profile, projects, contact, portraitSrc, voiceReplies }: Props) {
+  const answerListener = useRef<AnswerListener | null>(null);
+  const conversation = useConversation(projects ?? [], locale, answerListener);
+  const { card, messages, lastAssistant, lastUser, streaming } = conversation;
   const { send, stop, showCard, closeCard, spoken } = conversation;
+  const voice = useVoice({
+    initialReplies: voiceReplies,
+    onTranscript: (text) => void send(text),
+    onInterrupt: stop,
+  });
+  useEffect(() => {
+    answerListener.current = voice.listener;
+  }, [voice.listener]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -83,6 +96,30 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
     return [message.text + suffix, errorText(message)].filter(Boolean).join(" ") || "…";
   }
 
+  /** Typed and voice questions alike; a click/keypress also unlocks audio playback. */
+  function ask(text: string) {
+    voice.unlock();
+    void send(text);
+  }
+
+  function stopAll() {
+    stop();
+    voice.cancel();
+  }
+
+  // Voice phases take over the avatar: listening, transcribing (thinking), and while an
+  // answer is voiced: thinking until its audio starts, speaking while audio plays.
+  const avatar: AvatarState =
+    voice.phase === "listening"
+      ? "listening"
+      : voice.phase === "transcribing"
+        ? "thinking"
+        : voice.speaking
+          ? "speaking"
+          : voice.voicing
+            ? "thinking"
+            : conversation.avatar;
+
   const cardOpen = card !== null;
   const cardProject =
     card?.type === "show_project" ? projects?.find((project) => project.id === card.project_id) : undefined;
@@ -105,6 +142,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
               state={avatar}
               portraitSrc={portraitSrc}
               label={`${t.avatar.label}: ${t.avatar.states[avatar]}`}
+              levels={voice.levels}
             />
           </div>
 
@@ -131,7 +169,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
               <SuggestionChips
                 label={t.conversation.suggestionsLabel}
                 suggestions={t.conversation.suggestions}
-                onPick={(text) => void send(text)}
+                onPick={ask}
               />
             )}
 
@@ -147,13 +185,23 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
 
             <Composer
               t={t}
-              onSend={(text) => void send(text)}
-              streaming={streaming}
-              onStop={stop}
+              onSend={ask}
+              busy={streaming || voice.voicing}
+              onStop={stopAll}
               inputRef={inputRef}
+              voice={{
+                phase: voice.phase,
+                remainingMs: voice.remainingMs,
+                notice: voice.notice ? t.voice.notices[voice.notice] : null,
+                replies: voice.replies,
+                onToggleMic: () => void voice.toggleMic(),
+                onToggleReplies: voice.toggleReplies,
+              }}
             />
 
-            <p className="text-center text-xs text-mist-400">{t.conversation.transparency}</p>
+            <p className="text-center text-xs text-mist-400">
+              {t.conversation.transparency} <span id="voice-privacy">{t.voice.privacy}</span>
+            </p>
           </div>
         </div>
       </section>

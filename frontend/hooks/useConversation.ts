@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { type RefObject, useCallback, useEffect, useReducer, useRef } from "react";
+
+import type { AnswerListener } from "@/hooks/useVoice";
 
 import { matchIntent } from "@/lib/conversation/localIntentStub";
 import { ChatHttpError, streamChat } from "@/services/chatStream";
@@ -123,7 +125,15 @@ function historyOf(messages: Message[]): ChatTurn[] {
   return turns.slice(-MAX_HISTORY_TURNS);
 }
 
-export function useConversation(projects: ProjectSummary[], uiLanguage: ChatLanguage) {
+/**
+ * `listener` (optional) follows each answer as it streams; the voice layer uses it to speak
+ * sentences as soon as they are complete.
+ */
+export function useConversation(
+  projects: ProjectSummary[],
+  uiLanguage: ChatLanguage,
+  listener?: RefObject<AnswerListener | null>,
+) {
   const [state, dispatch] = useReducer(reducer, INITIAL);
   const messagesRef = useRef(state.messages);
   const nextId = useRef(1);
@@ -151,20 +161,29 @@ export function useConversation(projects: ProjectSummary[], uiLanguage: ChatLang
 
       const controller = new AbortController();
       abort.current = controller;
+      let status: Exclude<AnswerStatus, "streaming"> = "error";
       try {
         for await (const event of streamChat({ message, history, ui_language: uiLanguage }, controller.signal)) {
-          if (event.type === "start") dispatch({ type: "start", id, language: event.language });
-          else if (event.type === "token") dispatch({ type: "token", id, text: event.text });
-          else if (event.type === "done") dispatch({ type: "finish", id, status: "done", sources: event.sources });
-          else if (event.type === "error") {
+          if (event.type === "start") {
+            dispatch({ type: "start", id, language: event.language });
+            listener?.current?.onAnswerStart(event.language);
+          } else if (event.type === "token") {
+            dispatch({ type: "token", id, text: event.text });
+            listener?.current?.onToken(event.text);
+          } else if (event.type === "done") {
+            status = "done";
+            dispatch({ type: "finish", id, status: "done", sources: event.sources });
+          } else if (event.type === "error") {
             dispatch({ type: "finish", id, status: "error", error: { kind: "server", message: event.message } });
           }
         }
         // A stream that ends without `done`/`error` was cut off.
         dispatch({ type: "finish", id, status: "error", error: { kind: "network" } });
       } catch (error) {
-        if (controller.signal.aborted) dispatch({ type: "finish", id, status: "stopped" });
-        else if (error instanceof ChatHttpError) {
+        if (controller.signal.aborted) {
+          status = "stopped";
+          dispatch({ type: "finish", id, status: "stopped" });
+        } else if (error instanceof ChatHttpError) {
           dispatch({
             type: "finish",
             id,
@@ -174,9 +193,11 @@ export function useConversation(projects: ProjectSummary[], uiLanguage: ChatLang
         } else dispatch({ type: "finish", id, status: "error", error: { kind: "network" } });
       } finally {
         if (abort.current === controller) abort.current = null;
+        // Speak what arrived, even after an error; a stopped answer goes silent.
+        listener?.current?.onAnswerEnd(status);
       }
     },
-    [projects, uiLanguage],
+    [projects, uiLanguage, listener],
   );
 
   const stop = useCallback(() => abort.current?.abort(), []);
