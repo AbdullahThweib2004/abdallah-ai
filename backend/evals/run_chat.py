@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from app.agents.actions import split_actions
 from app.agents.prompt import build_system_prompt
 from app.core.config import get_settings
 from app.llm.base import LLMProvider, LLMRateLimitError, Usage
@@ -110,10 +111,30 @@ def check(case: dict, answer: str) -> list[str]:
 class Context:
     retriever: Retriever
     identity: str
+    # Approved (project_id, title) pairs: the prompt's action catalog and the allowlist.
+    projects: list[tuple[str, str]] = field(default_factory=list)
+
+    @property
+    def project_ids(self) -> set[str]:
+        return {project_id for project_id, _ in self.projects}
+
+
+def build_context(settings) -> Context | None:
+    knowledge = load_knowledge_service(settings.knowledge_base_dir)
+    if knowledge is None:
+        return None
+    projects = knowledge.list_projects()
+    return Context(
+        build_retriever(knowledge.documents, settings),
+        build_identity_context(knowledge.profile, knowledge.contact(), projects),
+        [(project.id, project.title) for project in projects],
+    )
 
 
 async def ask(provider: LLMProvider, context: Context, case: dict, settings) -> tuple[str, Usage]:
-    """Same path as the app: retrieve → prompt with retrieved chunks → stream the answer."""
+    """Same path as the app: retrieve → prompt with retrieved chunks → stream the answer.
+
+    Returns the RAW reply, including the model's `ACTIONS:` first line."""
     request = ChatRequest(
         message=case["message"],
         history=[ChatTurn(**turn) for turn in case.get("history", [])],
@@ -121,7 +142,7 @@ async def ask(provider: LLMProvider, context: Context, case: dict, settings) -> 
     )
     language = detect_language(request.message, request.ui_language)
     retrieval = context.retriever.retrieve(request.message, previous_user_message(request))
-    system_prompt = build_system_prompt(context.identity, retrieval.chunks)
+    system_prompt = build_system_prompt(context.identity, retrieval.chunks, context.projects)
     messages = build_messages(system_prompt, request, language)
     parts: list[str] = []
     usage = Usage()
@@ -136,29 +157,50 @@ async def ask(provider: LLMProvider, context: Context, case: dict, settings) -> 
     return "".join(parts), usage
 
 
-async def run_case(provider: LLMProvider, context: Context, case: dict, settings) -> Result:
+@dataclass
+class Reply:
+    raw: str = ""
+    usage: Usage = field(default_factory=Usage)
+    latency_ms: int = 0
+    rate_limit_hits: int = 0
+    error: str | None = None
+
+
+async def ask_with_backoff(provider: LLMProvider, context: Context, case: dict, settings) -> Reply:
+    """`ask` with retries: a 429 waits (Retry-After or exponential backoff) and tries again."""
     for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
         started = time.perf_counter()
         try:
-            answer, usage = await asyncio.wait_for(
+            raw, usage = await asyncio.wait_for(
                 ask(provider, context, case, settings),
                 timeout=settings.llm_timeout_seconds * 3,
             )
         except LLMRateLimitError as exc:
             if attempt == MAX_RATE_LIMIT_RETRIES:
-                return Result(
-                    case["id"], False, ["rate limited (gave up)"], rate_limit_hits=attempt + 1
-                )
+                return Reply(rate_limit_hits=attempt + 1, error="rate limited (gave up)")
             wait = exc.retry_after or min(60, 5 * 2**attempt)
             print(f"    429 on {case['id']}: waiting {wait:.0f}s (retry {attempt + 1})", flush=True)
             await asyncio.sleep(wait)
             continue
         except Exception as exc:  # noqa: BLE001 - report any provider failure as a failed case
-            return Result(case["id"], False, [f"error: {type(exc).__name__}: {exc}"])
+            return Reply(error=f"error: {type(exc).__name__}: {exc}")
         latency = round((time.perf_counter() - started) * 1000)
-        reasons = check(case, answer)
-        return Result(case["id"], not reasons, reasons, usage, latency, answer, attempt)
+        return Reply(raw, usage, latency, attempt)
     raise AssertionError("unreachable")
+
+
+async def run_case(provider: LLMProvider, context: Context, case: dict, settings) -> Result:
+    reply = await ask_with_backoff(provider, context, case, settings)
+    if reply.error:
+        return Result(case["id"], False, [reply.error], rate_limit_hits=reply.rate_limit_hits)
+    # Grade the answer the visitor sees: the model's raw text minus the ACTIONS line (which
+    # the app never shows). No display fixes (such as Arabic/Latin spacing) are applied.
+    _, answer = split_actions(reply.raw, context.project_ids)
+    reasons = check(case, answer)
+    return Result(
+        case["id"], not reasons, reasons, reply.usage, reply.latency_ms, answer,
+        reply.rate_limit_hits,
+    )  # fmt: skip
 
 
 def print_table(results: list[Result]) -> None:
@@ -202,14 +244,10 @@ async def main() -> int:
         print("LLM_PROVIDER=fake: evals need the real provider configured in .env", file=sys.stderr)
         return 2
 
-    knowledge = load_knowledge_service(settings.knowledge_base_dir)
-    if knowledge is None:
+    context = build_context(settings)
+    if context is None:
         print("Knowledge base failed to load", file=sys.stderr)
         return 2
-    context = Context(
-        build_retriever(knowledge.documents, settings),
-        build_identity_context(knowledge.profile, knowledge.contact(), knowledge.list_projects()),
-    )
     provider = build_provider(settings)
 
     cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
