@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 
 RRF_K = 60  # standard Reciprocal Rank Fusion constant
 CANDIDATES = 20  # results taken from each ranked list before fusion
-# At most this many of the top_k chunks may come from one document, so a question about two
-# projects ("compare A with B") also gets B's sections instead of six sections of A.
-MAX_CHUNKS_PER_DOC = 4
+# A question that names two or more projects ("compare A with B") shares the top_k slots
+# between them, so B's sections are not crowded out by A's. Other questions rank unchanged
+# (a blanket cap pushed e.g. Nawa's "Results" out of "How well does Nawa perform?").
+MIN_PROJECT_NAME_CHARS = 4
 
 _WORD = re.compile(r"[^\W_]+(?:[+#.][^\W_]+|\+\+)?")
 _STOPWORDS = {
@@ -81,9 +82,9 @@ class RetrievalResult:
     notes: list[str] = field(default_factory=list)
 
 
-def diversify(ranked: list[str], doc_of, top_k: int) -> list[str]:
-    """The best `top_k` ids in rank order, at most MAX_CHUNKS_PER_DOC per document; slots
-    nobody else can fill go back to the capped documents, in rank order."""
+def diversify(ranked: list[str], doc_of, top_k: int, per_doc_cap: int) -> list[str]:
+    """The best `top_k` ids in rank order, at most `per_doc_cap` per document; slots nobody
+    else can fill go back to the capped documents, in rank order."""
     picked: list[str] = []
     overflow: list[str] = []
     per_doc: dict[str, int] = {}
@@ -91,7 +92,7 @@ def diversify(ranked: list[str], doc_of, top_k: int) -> list[str]:
         if len(picked) == top_k:
             break
         doc = doc_of(chunk_id)
-        if per_doc.get(doc, 0) >= MAX_CHUNKS_PER_DOC:
+        if per_doc.get(doc, 0) >= per_doc_cap:
             overflow.append(chunk_id)
             continue
         per_doc[doc] = per_doc.get(doc, 0) + 1
@@ -122,6 +123,19 @@ class Retriever:
         self.top_k = top_k
         self.max_context_tokens = max_context_tokens
         self.min_score = min_score
+        # Short project names ("Nawa: Neural Network …" -> "nawa") to spot comparisons.
+        self._project_names = {
+            chunk.doc_id: name
+            for chunk in chunks
+            if chunk.project_id
+            and len(name := re.split(r"[:(]", chunk.title)[0].strip().casefold())
+            >= MIN_PROJECT_NAME_CHARS
+        }
+
+    def named_projects(self, message: str) -> set[str]:
+        """Doc ids of the projects whose short name appears in the message."""
+        text = message.casefold()
+        return {doc_id for doc_id, name in self._project_names.items() if name in text}
 
     @property
     def vector_enabled(self) -> bool:
@@ -165,11 +179,15 @@ class Retriever:
             ]
 
         fused = reciprocal_rank_fusion(rankings)
-        ranked = diversify(
-            sorted(fused, key=fused.__getitem__, reverse=True),
-            lambda chunk_id: self._chunks[chunk_id].doc_id,
-            self.top_k,
-        )
+        ranked = sorted(fused, key=fused.__getitem__, reverse=True)
+        named = self.named_projects(message)
+        if len(named) >= 2:
+            cap = max(1, self.top_k // len(named))
+            ranked = diversify(
+                ranked, lambda chunk_id: self._chunks[chunk_id].doc_id, self.top_k, cap
+            )
+        else:
+            ranked = ranked[: self.top_k]
 
         # Trim to the token budget: keep the best-scored chunks that fit.
         selected: list[ScoredChunk] = []

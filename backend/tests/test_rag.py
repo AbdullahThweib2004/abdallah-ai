@@ -192,10 +192,12 @@ def test_identity_context_is_small_and_complete(documents) -> None:
 
 
 def test_diversify_caps_chunks_per_document() -> None:
-    from app.rag.retriever import MAX_CHUNKS_PER_DOC, diversify
+    from app.rag.retriever import diversify
 
     ranked = [f"a{i}" for i in range(8)] + ["b0", "b1"]
-    picked = diversify(ranked, lambda chunk_id: chunk_id[0], 6)
-    assert picked == [f"a{i}" for i in range(MAX_CHUNKS_PER_DOC)] + ["b0", "b1"]
+    picked = diversify(ranked, lambda chunk_id: chunk_id[0], 6, 3)
+    assert picked == ["a0", "a1", "a2", "a3", "b0", "b1"]  # 3 of a, then b, in rank order
     # Nobody else to fill the slots: the capped document gets them back, in rank order.
-    assert diversify([f"a{i}" for i in range(8)], lambda c: c[0], 6) == [f"a{i}" for i in range(6)]
+    assert diversify([f"a{i}" for i in range(8)], lambda c: c[0], 6, 3) == [
+        f"a{i}" for i in range(6)
+    ]

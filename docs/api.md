@@ -265,6 +265,8 @@ complete and cuts it out, so it never reaches the visitor, TTS, History or the l
   types, kebab-case ids). Unknown types, extra fields (`url`, `href`, …), unknown or draft
   `project_id`s and duplicates are dropped; at most 2 are kept. Rejections are logged by action
   type and reason only (`type=show_project reason=unknown_project`), never ids or visitor text.
+- If nothing but the ACTIONS line arrives (no answer text), the stream ends with `error`
+  `unavailable` instead of a blank answer.
 - The result is sent as the single `action` event before any `token`, so the card opens while
   the answer is still being written and spoken. The frontend re-checks every action against the
   types and project ids it knows before opening a card.

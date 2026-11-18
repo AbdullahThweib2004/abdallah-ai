@@ -306,3 +306,12 @@ def test_prompt_lists_only_approved_project_ids(make_client, fixture_kb: Path) -
 
 def test_max_prefix_constant_is_reasonable() -> None:
     assert 200 <= actions_module.MAX_PREFIX_CHARS <= 600
+
+
+def test_actions_line_without_an_answer_becomes_a_friendly_error(
+    make_client, fixture_kb: Path
+) -> None:
+    provider = ScriptedProvider(["ACTIONS: []"])
+    stream = events(make_client(fixture_kb, provider=provider).post(URL, json={"message": "hi"}))
+    assert [name for name, _ in stream] == ["start", "action", "error"]
+    assert stream[-1][1]["code"] == "unavailable"

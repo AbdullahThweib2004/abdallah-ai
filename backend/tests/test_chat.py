@@ -16,7 +16,7 @@ from app.llm.openai_compatible import OpenAICompatibleProvider
 from app.models.chat import ChatRequest
 from app.rag.retriever import Retriever
 from app.services.chat_messages import MESSAGES
-from app.services.chat_service import chat_events
+from app.services.chat_service import ARABIC_REMINDER, chat_events
 from app.services.language import detect_language
 from app.services.rate_limit import InMemoryRateLimiter
 from tests.conftest import make_settings
@@ -147,7 +147,8 @@ def test_reply_language_instruction_is_appended_to_the_system_prompt(
     client.post(URL, json={"message": "كيف أتواصل معه؟"})
 
     system = fake.calls[0][0]["content"]
-    assert system.endswith("Reply in Arabic. Start with the ACTIONS line.")
+    assert "Reply in Arabic. Start with the ACTIONS line. " in system
+    assert system.endswith(ARABIC_REMINDER)
     assert system.startswith('You are "Abdallah AI"')
     assert "Never use markdown" in system
     assert "Never add praise" in system and "عبدالله ذويب" in system

@@ -41,6 +41,11 @@ from app.services.language import Language, detect_language
 logger = logging.getLogger("app.chat")
 
 LANGUAGE_NAMES = {"en": "English", "ar": "Arabic"}
+ARABIC_REMINDER = (
+    'Write "عبدالله" as one word, and always put a space between an Arabic word or letter '
+    '(و، ب، ل) and a following English word: "و React"، "و AI Developer Assistant"، never '
+    '"وReact".'
+)
 
 # Answers are plain text: shown as subtitles now, spoken in step 7. Despite the prompt, models
 # occasionally emit markdown emphasis or code marks; drop those characters before they reach
@@ -64,6 +69,9 @@ def build_messages(
         f"{system_prompt}\n\n# Reply language\nReply in {LANGUAGE_NAMES[language]}. "
         "Start with the ACTIONS line."
     )
+    if language == "ar":
+        # The most-missed Arabic rules, repeated where the model reads them last.
+        system += " " + ARABIC_REMINDER
     messages: list[ChatMessage] = [{"role": "system", "content": system}]
     messages += [{"role": turn.role, "content": turn.content} for turn in request.history]
     messages.append({"role": "user", "content": request.message})
@@ -151,11 +159,15 @@ async def chat_events(
     prefix_deadline: float | None = None
     pending: asyncio.Future | None = None
 
+    answered = False
+
     def decision(result: PrefixResult) -> list[str]:
         actions = validate_actions(result.raw, project_ids)
         action_types.extend(action.type for action in actions)
         events = [sse("action", {"actions": dump_actions(actions)})]
         if result.text:
+            nonlocal answered
+            answered = True
             events.append(sse("token", {"text": result.text}))
         return events
 
@@ -191,12 +203,19 @@ async def chat_events(
                     for event in decision(fed):
                         yield event
                 elif fed:
+                    answered = True
                     yield sse("token", {"text": fed})
             if chunk.usage:
                 usage, model = chunk.usage, chunk.model or model
         if isinstance(rest := parser.finish(), PrefixResult):
             for event in decision(rest):
                 yield event
+        if not answered:
+            # e.g. only an ACTIONS line: never leave the visitor with a blank answer.
+            status = "empty_answer"
+            logger.warning("chat request_id=%s the model returned no answer text", request_id)
+            yield error("unavailable")
+            return
         yield sse(
             "done",
             {
