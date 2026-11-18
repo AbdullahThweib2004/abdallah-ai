@@ -84,6 +84,8 @@ export type ChatSource = { doc_id: string; title: string; heading: string; proje
 
 export type ChatEvent =
   | { type: "start"; request_id: string; language: ChatLanguage }
+  // Server-validated card requests (0–2), always before the first token.
+  | { type: "action"; actions: UiAction[] }
   | { type: "token"; text: string }
   | {
       type: "done";

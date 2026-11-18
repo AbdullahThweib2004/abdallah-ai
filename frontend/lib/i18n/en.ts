@@ -78,6 +78,7 @@ export const en = {
     },
   },
   cards: {
+    switchTo: "Also show",
     close: "Close",
     // Decorative label above the card; the card's real heading comes from `titles`
     // (or the project title for a project card).

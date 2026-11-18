@@ -4,7 +4,6 @@ import { type RefObject, useCallback, useEffect, useReducer, useRef } from "reac
 
 import type { AnswerListener } from "@/hooks/useVoice";
 
-import { matchIntent } from "@/lib/conversation/localIntentStub";
 import { ChatHttpError, streamChat } from "@/services/chatStream";
 import type { ChatLanguage, ChatSource, ChatTurn, ProjectSummary, UiAction } from "@/services/types";
 
@@ -34,11 +33,16 @@ export type Message =
 
 export type AnswerMessage = Extract<Message, { kind: "answer" }>;
 
-type State = { messages: Message[]; avatar: AvatarState; card: UiAction | null };
+/**
+ * `card` is the open card; `cards` are the cards the AI requested for the latest answer (0–2),
+ * so the panel can offer the other one ("+1").
+ */
+type State = { messages: Message[]; avatar: AvatarState; card: UiAction | null; cards: UiAction[] };
 
 type Event =
   | { type: "ask"; userId: number; answerId: number; text: string; card: UiAction | null }
   | { type: "start"; id: number; language: ChatLanguage }
+  | { type: "actions"; actions: UiAction[] }
   | { type: "token"; id: number; text: string }
   | {
       type: "finish";
@@ -79,9 +83,13 @@ function reducer(state: State, event: Event): State {
         ],
         avatar: "thinking", // until the first token
         card: event.card ?? state.card,
+        cards: event.card ? [event.card] : state.cards,
       };
     case "start":
       return { ...state, messages: updateAnswer(state, event.id, (m) => ({ ...m, language: event.language })) };
+    case "actions":
+      // No card requested (small talk, refusals): keep whatever is open.
+      return event.actions.length ? { ...state, card: event.actions[0], cards: event.actions } : state;
     case "token":
       return {
         ...state,
@@ -99,11 +107,16 @@ function reducer(state: State, event: Event): State {
         ),
       };
     case "showCard":
-      return { ...state, card: event.card };
+      // Switching between the AI's cards keeps the pair; any other card replaces it.
+      return {
+        ...state,
+        card: event.card,
+        cards: state.cards.some((card) => sameCard(card, event.card)) ? state.cards : [event.card],
+      };
     case "spoken":
       return state.avatar === "speaking" ? { ...state, avatar: "idle" } : state;
     case "closeCard":
-      return { ...state, card: null };
+      return { ...state, card: null, cards: [] };
   }
 }
 
@@ -111,7 +124,37 @@ const INITIAL: State = {
   messages: [{ id: 0, role: "assistant", kind: "greeting" }],
   avatar: "speaking", // the greeting "speaks" while its subtitle types in
   card: null,
+  cards: [],
 };
+
+export function sameCard(a: UiAction, b: UiAction): boolean {
+  return a.type === b.type && (a.type !== "show_project" || (b.type === "show_project" && a.project_id === b.project_id));
+}
+
+const CARD_TYPES = new Set<UiAction["type"]>([
+  "show_project",
+  "show_projects",
+  "show_skills",
+  "show_experience",
+  "show_education",
+  "show_contact",
+]);
+
+/**
+ * The server already validated these against its allowlist; check again against what this
+ * page knows (defense in depth), so an unknown type or project id can never open anything.
+ */
+function knownActions(actions: unknown, projects: ProjectSummary[]): UiAction[] {
+  if (!Array.isArray(actions)) return [];
+  const known: UiAction[] = [];
+  for (const action of actions as UiAction[]) {
+    if (typeof action !== "object" || action === null || !CARD_TYPES.has(action.type)) continue;
+    if (action.type === "show_project" && !projects.some((project) => project.id === action.project_id)) continue;
+    if (known.some((card) => sameCard(card, action))) continue;
+    known.push(action.type === "show_project" ? { type: "show_project", project_id: action.project_id } : { type: action.type });
+  }
+  return known.slice(0, 2);
+}
 
 /** The last turns the model may see: visitor messages and finished (or stopped) answers. */
 function historyOf(messages: Message[]): ChatTurn[] {
@@ -147,8 +190,8 @@ export function useConversation(
   const streaming = state.messages.some((m) => m.role === "assistant" && m.kind === "answer" && m.status === "streaming");
 
   /**
-   * Ask a question. The card comes from the TEMPORARY keyword stub (step 6 replaces it with
-   * validated AI actions) unless the caller passes one explicitly.
+   * Ask a question. Cards open when the server sends validated AI actions; a caller may also
+   * open one right away (deep links, whose ids were validated before).
    */
   const send = useCallback(
     async (text: string, card?: UiAction) => {
@@ -157,7 +200,7 @@ export function useConversation(
       const history = historyOf(messagesRef.current);
       const userId = nextId.current++;
       const id = nextId.current++;
-      dispatch({ type: "ask", userId, answerId: id, text: message, card: card ?? matchIntent(message, projects) });
+      dispatch({ type: "ask", userId, answerId: id, text: message, card: card ?? null });
 
       const controller = new AbortController();
       abort.current = controller;
@@ -167,6 +210,9 @@ export function useConversation(
           if (event.type === "start") {
             dispatch({ type: "start", id, language: event.language });
             listener?.current?.onAnswerStart(event.language);
+          } else if (event.type === "action") {
+            // Arrives before the first token, so the card opens while the answer is spoken.
+            dispatch({ type: "actions", actions: knownActions(event.actions, projects) });
           } else if (event.type === "token") {
             dispatch({ type: "token", id, text: event.text });
             listener?.current?.onToken(event.text);

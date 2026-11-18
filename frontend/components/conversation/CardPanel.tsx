@@ -10,6 +10,8 @@ type Props = {
   closeLabel: string;
   onClose: () => void;
   headingRef: Ref<HTMLHeadingElement>;
+  /** The other card the AI requested with this answer (e.g. two compared projects). */
+  alternative?: { label: string; lang?: "en"; switchLabel: string; onSelect: () => void };
   children: ReactNode;
 };
 
@@ -18,7 +20,16 @@ type Props = {
  * Its content scrolls internally so the page itself never scrolls. Focus is moved to the
  * heading when the card opens.
  */
-export function CardPanel({ eyebrow, heading, headingLang, closeLabel, onClose, headingRef, children }: Props) {
+export function CardPanel({
+  eyebrow,
+  heading,
+  headingLang,
+  closeLabel,
+  onClose,
+  headingRef,
+  alternative,
+  children,
+}: Props) {
   return (
     <aside
       aria-labelledby="card-heading"
@@ -26,9 +37,26 @@ export function CardPanel({ eyebrow, heading, headingLang, closeLabel, onClose, 
     >
       <div aria-hidden="true" className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-ink-600 lg:hidden" />
       <header className="flex items-center justify-between gap-4 border-b border-ink-800 px-5 py-3 sm:px-6">
-        <p aria-hidden="true" className="eyebrow text-mist-400">
-          {eyebrow}
-        </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <p aria-hidden="true" className="eyebrow shrink-0 text-mist-400">
+            {eyebrow}
+          </p>
+          {alternative && (
+            <button
+              type="button"
+              onClick={alternative.onSelect}
+              aria-label={`${alternative.switchLabel}: ${alternative.label}`}
+              className="flex min-w-0 items-center gap-1.5 rounded-full border border-ink-700 py-1 pe-3 ps-1 text-xs text-mist-200 transition-colors hover:border-accent/60 hover:text-mist-50"
+            >
+              <span aria-hidden="true" className="grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 font-semibold text-accent-ink">
+                +1
+              </span>
+              <span lang={alternative.lang} className="truncate">
+                {alternative.label}
+              </span>
+            </button>
+          )}
+        </div>
         <button
           type="button"
           onClick={onClose}

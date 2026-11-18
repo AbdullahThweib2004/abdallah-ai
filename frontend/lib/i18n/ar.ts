@@ -79,6 +79,7 @@ export const ar: Dictionary = {
     },
   },
   cards: {
+    switchTo: "اعرض أيضاً",
     close: "إغلاق",
     eyebrows: {
       show_project: "مشروع",

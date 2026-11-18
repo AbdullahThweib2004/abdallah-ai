@@ -24,6 +24,7 @@ function parseEvent(block: string): ChatEvent | null {
   if (typeof payload !== "object" || payload === null) return null;
   switch (name) {
     case "start":
+    case "action":
     case "token":
     case "done":
     case "error":

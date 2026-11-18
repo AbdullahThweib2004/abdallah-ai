@@ -4,10 +4,11 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AvatarStage } from "@/components/avatar/AvatarStage";
-import { type AnswerMessage, type AvatarState, type Message, useConversation } from "@/hooks/useConversation";
+import { type AnswerMessage, type AvatarState, type Message, sameCard, useConversation } from "@/hooks/useConversation";
 import { type AnswerListener, useVoice } from "@/hooks/useVoice";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
 import type { VoiceRepliesPreference } from "@/lib/voice/preferences";
+import type { UiAction } from "@/services/types";
 
 import { AnswerSubtitle } from "./AnswerSubtitle";
 import { CardBody, type CardData } from "./CardBody";
@@ -29,7 +30,7 @@ type Props = CardData & {
 export function ConversationHome({ t, locale, profile, projects, contact, portraitSrc, voiceReplies }: Props) {
   const answerListener = useRef<AnswerListener | null>(null);
   const conversation = useConversation(projects ?? [], locale, answerListener);
-  const { card, messages, lastAssistant, lastUser, streaming } = conversation;
+  const { card, cards, messages, lastAssistant, lastUser, streaming } = conversation;
   const { send, stop, showCard, closeCard, spoken } = conversation;
   const voice = useVoice({
     initialReplies: voiceReplies,
@@ -121,8 +122,12 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
             : conversation.avatar;
 
   const cardOpen = card !== null;
-  const cardProject =
-    card?.type === "show_project" ? projects?.find((project) => project.id === card.project_id) : undefined;
+  const projectOf = (action: UiAction | undefined) =>
+    action?.type === "show_project" ? projects?.find((project) => project.id === action.project_id) : undefined;
+  const cardProject = projectOf(card ?? undefined);
+  // Two cards from one answer (e.g. a comparison): offer the one not shown.
+  const otherCard = card ? cards.find((option) => !sameCard(option, card)) : undefined;
+  const otherProject = projectOf(otherCard);
   // On mobile the card is a bottom sheet; everything except the avatar sits underneath it.
   const underSheet = cardOpen ? "max-lg:hidden" : "";
 
@@ -214,6 +219,15 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
           closeLabel={t.cards.close}
           onClose={closeCard}
           headingRef={headingRef}
+          alternative={
+            otherCard && {
+              // Short project name: "Nawa: Neural Network …" → "Nawa".
+              label: otherProject ? otherProject.title.split(/[:(]/)[0].trim() : t.cards.titles[otherCard.type],
+              lang: otherProject ? "en" : undefined,
+              switchLabel: t.cards.switchTo,
+              onSelect: () => showCard(otherCard),
+            }
+          }
         >
           <CardBody card={card} data={{ profile, projects, contact }} t={t} />
         </CardPanel>
