@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import type { AnswerMessage } from "@/hooks/useConversation";
 import type { Dictionary } from "@/lib/i18n/config";
 import { isolateLatin } from "@/lib/text/bidi";
+import { spaceArabicLatin } from "@/lib/text/spacing";
 
 import { SourceChips } from "./SourceChips";
 
@@ -19,6 +20,7 @@ export function AnswerSubtitle({ answer, errorText, t, fallbackLang }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const finished = answer.status !== "streaming";
   const lang = answer.language ?? fallbackLang;
+  const text = spaceArabicLatin(answer.text);
 
   useEffect(() => {
     const box = scroller.current;
@@ -26,7 +28,7 @@ export function AnswerSubtitle({ answer, errorText, t, fallbackLang }: Props) {
   }, [answer.text, errorText]);
 
   const announcement = [
-    answer.text,
+    text,
     answer.status === "stopped" ? `(${t.conversation.stopped})` : "",
     errorText ?? "",
   ]
@@ -44,7 +46,7 @@ export function AnswerSubtitle({ answer, errorText, t, fallbackLang }: Props) {
       >
         {answer.text && (
           <p lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} className="whitespace-pre-line">
-            {lang === "ar" ? isolateLatin(answer.text) : answer.text}
+            {lang === "ar" ? isolateLatin(text) : text}
             {!finished && <span aria-hidden="true" className="ms-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-accent motion-reduce:animate-none" />}
           </p>
         )}

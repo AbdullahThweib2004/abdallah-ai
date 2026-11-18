@@ -1,6 +1,7 @@
 import { VoiceHttpError, fetchSpeech } from "@/services/voice";
 import type { ChatLanguage } from "@/services/types";
 
+import { spaceArabicLatin } from "@/lib/text/spacing";
 import { LevelMeter } from "./levels";
 import { SentenceSplitter } from "./sentences";
 
@@ -175,7 +176,8 @@ export class Speaker {
     const answer = this.answer;
     if (!answer) return;
     const item: Item = {
-      text,
+      // "وReact" would be read as one word; both voices get "و React".
+      text: spaceArabicLatin(text),
       language: answer.language,
       chunks: [],
       done: false,

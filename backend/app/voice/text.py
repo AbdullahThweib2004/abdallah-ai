@@ -36,6 +36,8 @@ _REPEATED_PUNCT = re.compile(r"([.,;:،؛])(?:\s*[.,;:،؛])+")
 # "find it at <url>." loses its URL; drop the orphaned preposition too.
 _DANGLING_PREP = re.compile(r"\s(?:at|via)\s*([.!?])", re.I)
 _SPACES = re.compile(r"\s+")
+# "وReact" is read as one word: an Arabic letter (or tatweel) directly before a Latin letter.
+_ARABIC_THEN_LATIN = re.compile(r"([\u0621-\u064A\u0640\u0671-\u06D3])([A-Za-z])")
 
 
 def clean_for_speech(text: str, language: Language) -> str:
@@ -53,6 +55,7 @@ def clean_for_speech(text: str, language: Language) -> str:
     text = _EMPHASIS.sub(r"\2", text)
     text = _LEFTOVER_MARKS.sub(" ", text)
     text = _EMPTY_BRACKETS.sub(" ", text)
+    text = _ARABIC_THEN_LATIN.sub(r"\1 \2", text)
     text = _SPACES.sub(" ", text)
     text = _SPACE_BEFORE_PUNCT.sub(r"\1", text)
     text = _DANGLING_PREP.sub(r"\1", text)

@@ -11,7 +11,8 @@ import { LevelMeter } from "./levels";
 
 export const MAX_MS = 30_000;
 export const COUNTDOWN_FROM_MS = 5_000;
-const SILENCE_MS = 1_500;
+// Quiet time that ends a question (NEXT_PUBLIC_VAD_SILENCE_MS, default 1500, kept in 500–5000).
+const SILENCE_MS = silenceMs(process.env.NEXT_PUBLIC_VAD_SILENCE_MS);
 // Give up early if the visitor never starts talking.
 const NO_SPEECH_TIMEOUT_MS = 8_000;
 const TICK_MS = 50;
@@ -22,6 +23,11 @@ const NOISE_FACTOR = 3;
 const SPEECH_START_TICKS = 2;
 
 const MIME_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"];
+
+export function silenceMs(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && value?.trim() ? Math.min(5_000, Math.max(500, parsed)) : 1_500;
+}
 
 export type MicErrorKind = "denied" | "missing" | "unsupported" | "failed";
 

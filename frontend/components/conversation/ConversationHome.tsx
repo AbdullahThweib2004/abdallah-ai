@@ -7,6 +7,7 @@ import { AvatarStage } from "@/components/avatar/AvatarStage";
 import { type AnswerMessage, type AvatarState, type Message, sameCard, useConversation } from "@/hooks/useConversation";
 import { type AnswerListener, useVoice } from "@/hooks/useVoice";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
+import { spaceArabicLatin } from "@/lib/text/spacing";
 import type { VoiceRepliesPreference } from "@/lib/voice/preferences";
 import type { UiAction } from "@/services/types";
 
@@ -94,7 +95,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
       return (locale === "ar" ? profile?.intro.ar : profile?.intro.en) ?? t.tagline;
     }
     const suffix = message.status === "stopped" ? ` (${t.conversation.stopped})` : "";
-    return [message.text + suffix, errorText(message)].filter(Boolean).join(" ") || "…";
+    return [spaceArabicLatin(message.text) + suffix, errorText(message)].filter(Boolean).join(" ") || "…";
   }
 
   /** Typed and voice questions alike; a click/keypress also unlocks audio playback. */
