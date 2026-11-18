@@ -23,12 +23,11 @@ import { Transcript } from "./Transcript";
 type Props = CardData & {
   t: Dictionary;
   locale: Locale;
-  portraitSrc: string | null;
   /** The speaker toggle as saved in its cookie (null: never chosen). */
   voiceReplies: VoiceRepliesPreference;
 };
 
-export function ConversationHome({ t, locale, profile, projects, contact, portraitSrc, voiceReplies }: Props) {
+export function ConversationHome({ t, locale, profile, projects, contact, voiceReplies }: Props) {
   const answerListener = useRef<AnswerListener | null>(null);
   const conversation = useConversation(projects ?? [], locale, answerListener);
   const { card, cards, messages, lastAssistant, lastUser, streaming } = conversation;
@@ -146,9 +145,10 @@ export function ConversationHome({ t, locale, profile, projects, contact, portra
           <div className="avatar-frame grid min-h-0 flex-1 place-items-center">
             <AvatarStage
               state={avatar}
-              portraitSrc={portraitSrc}
               label={`${t.avatar.label}: ${t.avatar.states[avatar]}`}
               levels={voice.levels}
+              cardOpen={cardOpen}
+              rtl={locale === "ar"}
             />
           </div>
 

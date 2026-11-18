@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 import { EnglishContent } from "@/components/ui/EnglishContent";
 import { Markdown } from "@/components/ui/Markdown";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -6,7 +8,14 @@ import type { Profile } from "@/services/types";
 
 import { Timeline } from "./Timeline";
 
-export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }) {
+type Props = {
+  profile: Profile;
+  t: Dictionary;
+  /** `/avatar/abdallah.jpg` when that authorized photo exists in `public/`, else null. */
+  photoSrc?: string | null;
+};
+
+export function AboutSection({ profile, t, photoSrc = null }: Props) {
   const facts = [
     { label: t.profile.location, value: profile.location },
     { label: t.profile.languages, value: profile.languages.join(" · ") || null },
@@ -20,6 +29,17 @@ export function AboutSection({ profile, t }: { profile: Profile; t: Dictionary }
         </EnglishContent>
 
         <div className="space-y-8">
+          {photoSrc && (
+            <div className="relative aspect-[4/5] w-full max-w-xs overflow-hidden rounded-2xl border border-ink-700 bg-ink-900">
+              <Image
+                src={photoSrc}
+                alt={profile.name}
+                fill
+                sizes="(max-width: 1024px) 80vw, 320px"
+                className="object-cover"
+              />
+            </div>
+          )}
           {facts.length > 0 && (
             <dl className="divide-y divide-ink-800 rounded-2xl border border-ink-700 bg-ink-900">
               {facts.map((fact) => (

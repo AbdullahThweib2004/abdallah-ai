@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { Suspense } from "react";
 
 import { PageSkeleton } from "@/components/ui/Skeletons";
@@ -15,6 +17,9 @@ import { getDictionary } from "@/lib/i18n/config";
 import { getLocale } from "@/lib/i18n/server";
 import { getContact, getProfile } from "@/services/content";
 
+/** Optional authorized photo of Abdallah, shown next to the About text when the file exists. */
+const PHOTO = "/avatar/abdallah.jpg";
+
 const SECTION = "mx-auto max-w-6xl scroll-mt-20 px-4 py-14 sm:px-6 lg:px-8";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -24,6 +29,7 @@ export async function generateMetadata(): Promise<Metadata> {
 async function AboutContent() {
   const [locale, profile, contact] = await Promise.all([getLocale(), getProfile(), getContact()]);
   const t = getDictionary(locale);
+  const photoSrc = existsSync(path.join(process.cwd(), "public", PHOTO)) ? PHOTO : null;
 
   return (
     <>
@@ -31,7 +37,7 @@ async function AboutContent() {
 
       <section id="about" aria-labelledby="about-title" className={SECTION}>
         <SectionHeading id="about-title" index="01" title={t.sections.about} />
-        {profile ? <AboutSection profile={profile} t={t} /> : <ContentUnavailable t={t} />}
+        {profile ? <AboutSection profile={profile} t={t} photoSrc={photoSrc} /> : <ContentUnavailable t={t} />}
       </section>
 
       {profile && profile.skills.length > 0 && (

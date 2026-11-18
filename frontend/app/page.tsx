@@ -1,7 +1,5 @@
 import { HomeSkeleton } from "@/components/ui/Skeletons";
 import { cookies } from "next/headers";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { Suspense } from "react";
 
 import { ConversationHome } from "@/components/conversation/ConversationHome";
@@ -9,8 +7,6 @@ import { getDictionary } from "@/lib/i18n/config";
 import { VOICE_REPLIES_COOKIE, parseVoiceReplies } from "@/lib/voice/preferences";
 import { getLocale } from "@/lib/i18n/server";
 import { getContact, getProfile, getProjects } from "@/services/content";
-
-const PORTRAIT = "/avatar/abdallah.jpg";
 
 async function HomeContent() {
   const [locale, profile, projects, contact, cookieStore] = await Promise.all([
@@ -20,8 +16,6 @@ async function HomeContent() {
     getContact(),
     cookies(),
   ]);
-  // Optional authorized portrait; the stage falls back to the orb when it is absent.
-  const portraitSrc = existsSync(path.join(process.cwd(), "public", PORTRAIT)) ? PORTRAIT : null;
 
   return (
     <Suspense>
@@ -31,7 +25,6 @@ async function HomeContent() {
         profile={profile}
         projects={projects}
         contact={contact}
-        portraitSrc={portraitSrc}
         voiceReplies={parseVoiceReplies(cookieStore.get(VOICE_REPLIES_COOKIE)?.value)}
       />
     </Suspense>

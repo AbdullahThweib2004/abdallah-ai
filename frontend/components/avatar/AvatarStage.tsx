@@ -1,41 +1,131 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import { Component, type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { AvatarState } from "@/hooks/useConversation";
+import { type CardSide, cardSideFor } from "@/lib/avatar/motion";
 
 const WAVE_BARS = [0.45, 0.8, 0.6, 1, 0.7, 0.9, 0.5, 0.75, 0.4];
 
+// three.js + react-three-fiber live in their own chunk, fetched only after first paint.
+const RobotCanvas = dynamic(() => import("./robot/RobotCanvas"), { ssr: false });
+
 type Props = {
   state: AvatarState;
-  /** `/avatar/abdallah.jpg` when the file exists, otherwise null (orb fallback). */
-  portraitSrc: string | null;
   label: string;
   /**
    * Live per-bar audio levels (0..1): the microphone while listening, the playing answer
-   * while speaking. Null (or absent) keeps the CSS animation, e.g. for the browser voice.
+   * while speaking. Null (or absent) means nothing measurable plays (e.g. the browser voice).
    */
   levels?: () => number[] | null;
+  /** A card is open (side panel on desktop, bottom sheet on mobile): the head turns toward it. */
+  cardOpen?: boolean;
+  rtl?: boolean;
+  /** Overrides `prefers-reduced-motion` (the dev preview's toggle). */
+  reducedMotion?: boolean;
+  /** Dev preview only: never load the robot, show the orb. */
+  forceOrb?: boolean;
 };
+
+/** "orb": fallback in use (loading, no WebGL, or failed); "loading": robot fetching/compiling. */
+type Robot = "orb" | "loading" | "ready" | "failed";
+
+function useMedia(query: string, serverValue: boolean): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const media = window.matchMedia(query);
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(query).matches,
+    () => serverValue,
+  );
+}
+
+function webglAvailable(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    if (!context) return false;
+    context.getExtension("WEBGL_lose_context")?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Any error while loading or rendering the robot switches the stage back to the orb. */
+class RobotBoundary extends Component<{ onError: (error: Error) => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: Error) {
+    this.props.onError(error);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /**
  * The avatar is the hero. It sizes itself from its container (`cqmin`), so place it inside
- * an element with `container-type: size`. Visual states come from `data-state` in CSS.
- *
- * Step 9 swaps the portrait for a lip-synced <video> inside `.avatar-media`; nothing else in
- * the layout depends on what that slot contains.
+ * an element with `container-type: size`. The 3D robot loads lazily after first paint; until
+ * it draws its first frame (or if WebGL is missing or anything fails) the CSS orb shows in the
+ * same box, so nothing shifts. Visual states of the orb come from `data-state` in CSS.
  */
-export function AvatarStage({ state, portraitSrc, label, levels }: Props) {
+export function AvatarStage({ state, label, levels, cardOpen = false, rtl = false, reducedMotion, forceOrb = false }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const [robot, setRobot] = useState<Robot>("orb");
+  const prefersReduced = useMedia("(prefers-reduced-motion: reduce)", false);
+  const desktop = useMedia("(min-width: 64rem)", true);
+  const still = reducedMotion ?? prefersReduced;
+  const card: CardSide | null = cardOpen ? cardSideFor(desktop, rtl) : null;
+  const showOrb = robot !== "ready";
 
-  // Drive the bars and the input ring from real audio, one frame at a time, without React
-  // re-renders. Skipped entirely when the visitor prefers reduced motion.
+  // Mount the robot after the page has painted and the main thread is idle. Only once: when
+  // the route is kept in a hidden <Activity> and shown again, effects re-run but state survives.
+  const started = useRef(false);
+  useEffect(() => {
+    if (forceOrb || started.current) return;
+    let cancelled = false;
+    let idle = 0;
+    const start = () => {
+      if (cancelled) return;
+      started.current = true;
+      performance.mark("avatar:start");
+      if (!webglAvailable()) {
+        setRobot("failed");
+        return;
+      }
+      setRobot("loading");
+    };
+    const schedule = () => {
+      if (typeof window.requestIdleCallback === "function") idle = window.requestIdleCallback(start, { timeout: 2500 });
+      else idle = window.setTimeout(start, 600);
+    };
+    if (document.readyState === "complete") schedule();
+    else window.addEventListener("load", schedule, { once: true });
+    return () => {
+      cancelled = true;
+      window.removeEventListener("load", schedule);
+      if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(idle);
+      window.clearTimeout(idle);
+    };
+  }, [forceOrb]);
+
+  // Orb mode: drive its bars and input ring from real audio, one frame at a time, without
+  // React re-renders. Skipped under reduced motion and once the robot is drawing.
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || !levels || (state !== "listening" && state !== "speaking")) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!stage || !showOrb || !levels || (state !== "listening" && state !== "speaking")) return;
+    if (still) return;
     let frame = 0;
     const draw = () => {
       const values = levels();
@@ -55,42 +145,61 @@ export function AvatarStage({ state, portraitSrc, label, levels }: Props) {
       stage.dataset.live = "false";
       stage.style.removeProperty("--level");
     };
-  }, [state, levels]);
+  }, [state, levels, showOrb, still]);
+
+  const fail = (error: Error) => {
+    console.warn("Avatar: 3D robot unavailable, showing the orb.", error.message);
+    setRobot("failed");
+  };
 
   return (
-    <div ref={stageRef} className="avatar-stage relative aspect-square" data-state={state} role="img" aria-label={label}>
+    <div
+      ref={stageRef}
+      className="avatar-stage relative aspect-square"
+      data-state={state}
+      data-robot={robot}
+      role="img"
+      aria-label={label}
+    >
       <div aria-hidden="true" className="avatar-glow absolute -inset-[14%] rounded-full" />
-      <div aria-hidden="true" className="avatar-ring absolute -inset-[7%] rounded-full border border-ink-700" />
-      <div aria-hidden="true" className="avatar-ring-level absolute -inset-[7%] rounded-full border-2 border-accent" />
-      <div aria-hidden="true" className="avatar-ring-thinking absolute -inset-[3.5%] rounded-full border-2 border-dashed border-accent/60" />
 
-      <div className="avatar-media absolute inset-0 overflow-hidden rounded-full border border-accent/25 bg-ink-900">
-        {portraitSrc ? (
-          <Image src={portraitSrc} alt="" fill priority sizes="(max-width: 768px) 70vw, 420px" className="object-cover" />
-        ) : (
-          <div aria-hidden="true" className="avatar-orb absolute inset-0" />
-        )}
-      </div>
-
-      <div
-        aria-hidden="true"
-        className={`absolute inset-x-0 flex items-center justify-center ${
-          portraitSrc ? "bottom-[-4%] h-[10%]" : "top-1/2 h-[20%] -translate-y-1/2"
-        }`}
-      >
-        <div className={`flex h-full items-center gap-1.5 ${portraitSrc ? "rounded-full bg-ink-950/80 px-3" : ""}`}>
-          {WAVE_BARS.map((height, index) => (
-            <span
-              key={index}
-              ref={(element) => {
-                barRefs.current[index] = element;
-              }}
-              className="avatar-wave-bar block w-1 rounded-full bg-accent sm:w-1.5"
-              style={{ height: `${height * 100}%`, ["--wave-delay" as string]: `${index * 110}ms` }}
-            />
-          ))}
+      <div aria-hidden="true" className="avatar-orb-layer absolute inset-0">
+        <div className="avatar-ring absolute -inset-[7%] rounded-full border border-ink-700" />
+        <div className="avatar-ring-level absolute -inset-[7%] rounded-full border-2 border-accent" />
+        <div className="avatar-ring-thinking absolute -inset-[3.5%] rounded-full border-2 border-dashed border-accent/60" />
+        <div className="avatar-media absolute inset-0 overflow-hidden rounded-full border border-accent/25 bg-ink-900">
+          <div className="avatar-orb absolute inset-0" />
+        </div>
+        <div className="absolute inset-x-0 top-1/2 flex h-[20%] -translate-y-1/2 items-center justify-center">
+          <div className="flex h-full items-center gap-1.5">
+            {WAVE_BARS.map((height, index) => (
+              <span
+                key={index}
+                ref={(element) => {
+                  barRefs.current[index] = element;
+                }}
+                className="avatar-wave-bar block w-1 rounded-full bg-accent sm:w-1.5"
+                style={{ height: `${height * 100}%`, ["--wave-delay" as string]: `${index * 110}ms` }}
+              />
+            ))}
+          </div>
         </div>
       </div>
+
+      {(robot === "loading" || robot === "ready") && (
+        <div className="avatar-robot absolute -inset-[16%]">
+          <RobotBoundary onError={fail}>
+            <RobotCanvas
+              state={state}
+              reducedMotion={still}
+              card={card}
+              levels={levels}
+              onReady={() => setRobot((current) => (current === "loading" ? "ready" : current))}
+              onFail={fail}
+            />
+          </RobotBoundary>
+        </div>
+      )}
     </div>
   );
 }

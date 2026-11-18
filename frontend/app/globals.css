@@ -240,6 +240,28 @@ body {
   transition: transform 80ms linear;
 }
 
+/* 3D robot (lazy). The orb stays underneath until the robot's first frame, then fades out;
+   the canvas box is larger than the stage (shoulders, antenna) but absolutely positioned. */
+.avatar-orb-layer {
+  transition: opacity 500ms ease;
+}
+.avatar-robot {
+  opacity: 0;
+  pointer-events: none;
+  /* The shoulders fade out instead of ending at the canvas edge. */
+  mask-image: linear-gradient(to bottom, #000 70%, transparent 94%);
+  transition: opacity 600ms ease;
+}
+.avatar-stage[data-robot="ready"] .avatar-robot {
+  opacity: 1;
+}
+.avatar-stage[data-robot="ready"] .avatar-orb-layer {
+  opacity: 0;
+}
+.avatar-stage[data-robot="ready"] .avatar-glow {
+  opacity: 0.3;
+}
+
 /* ---------------------------------------------------------------- card panel */
 
 .card-panel {
