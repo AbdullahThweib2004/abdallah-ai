@@ -102,7 +102,9 @@ def test_sse_events_arrive_in_order_with_expected_shape(client: TestClient) -> N
     assert response.headers["content-type"].startswith("text/event-stream")
     stream = events(response)
     assert stream[0][0] == "start" and stream[-1][0] == "done"
-    assert {name for name, _ in stream[1:-1]} == {"token"}
+    # Exactly one `action` event, before every token (the fake answer requests no card).
+    assert stream[1] == ("action", {"actions": []})
+    assert {name for name, _ in stream[2:-1]} == {"token"}
     start, done = stream[0][1], stream[-1][1]
     assert set(start) == {"request_id", "language"} and start["language"] == "en"
     assert set(done) == {"usage", "latency_ms", "sources"}
@@ -145,10 +147,11 @@ def test_reply_language_instruction_is_appended_to_the_system_prompt(
     client.post(URL, json={"message": "كيف أتواصل معه؟"})
 
     system = fake.calls[0][0]["content"]
-    assert system.endswith("Reply in Arabic.")
+    assert system.endswith("Reply in Arabic. Start with the ACTIONS line.")
     assert system.startswith('You are "Abdallah AI"')
     assert "Never use markdown" in system
-    assert "Never add praise" in system and "عبدالله ذويب" in system  # prompt v4 is in use
+    assert "Never add praise" in system and "عبدالله ذويب" in system
+    assert "ACTIONS:" in system and "- alpha: Alpha" in system  # prompt v5 + project catalog
 
 
 # --- failures --------------------------------------------------------------------------------
@@ -188,7 +191,13 @@ def test_error_after_partial_answer_keeps_tokens_then_errors(make_client, fixtur
     )
     client = make_client(fixture_kb, provider=fake)
 
-    assert names(client.post(URL, json={"message": "hi"})) == ["start", "token", "token", "error"]
+    assert names(client.post(URL, json={"message": "hi"})) == [
+        "start",
+        "action",
+        "token",
+        "token",
+        "error",
+    ]
 
 
 def test_misconfigured_provider_keeps_app_up_and_reports_unavailable(

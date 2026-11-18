@@ -1,17 +1,28 @@
 """Streams one chat turn as Server-Sent Events.
 
 Retrieve the chunks relevant to the question, build the prompt from them, stream the answer.
-Events: `start` {request_id, language} → `token` {text}… → `done` {usage, latency_ms, sources},
-or an `error` {code, message} at any point. The visitor's text is never logged.
+Events: `start` {request_id, language} → `action` {actions} → `token` {text}… → `done`
+{usage, latency_ms, sources}, or an `error` {code, message} at any point. The model's
+`ACTIONS:` first line is cut from the stream, validated against the allowlist and sent as the
+single `action` event before any token (see app/agents/actions.py). The visitor's text is
+never logged.
 """
 
 import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
+from contextlib import suppress
 from typing import Any
 
+from app.agents.actions import (
+    PREFIX_DEADLINE_SECONDS,
+    ActionPrefixParser,
+    PrefixResult,
+    dump_actions,
+    validate_actions,
+)
 from app.agents.prompt import build_system_prompt
 from app.core.config import Settings
 from app.llm.base import (
@@ -49,7 +60,10 @@ def build_messages(
     system_prompt: str, request: ChatRequest, language: Language
 ) -> list[ChatMessage]:
     # The reply-language line goes last so the long prompt prefix stays identical (cacheable).
-    system = f"{system_prompt}\n\n# Reply language\nReply in {LANGUAGE_NAMES[language]}."
+    system = (
+        f"{system_prompt}\n\n# Reply language\nReply in {LANGUAGE_NAMES[language]}. "
+        "Start with the ACTIONS line."
+    )
     messages: list[ChatMessage] = [{"role": "system", "content": system}]
     messages += [{"role": turn.role, "content": turn.content} for turn in request.history]
     messages.append({"role": "user", "content": request.message})
@@ -90,8 +104,13 @@ async def chat_events(
     retriever: Retriever | None,
     identity: str,
     settings: Settings,
+    projects: Sequence[tuple[str, str]] = (),
 ) -> AsyncIterator[str]:
+    """`projects` = approved (project_id, title) pairs: the prompt's catalog and the only ids
+    a `show_project` action may use."""
     language = detect_language(request.message, request.ui_language)
+    project_ids = frozenset(project_id for project_id, _ in projects)
+    action_types: list[str] = []
     started = time.perf_counter()
     usage = Usage()
     model = provider.model if provider else "none"
@@ -105,7 +124,7 @@ async def chat_events(
     if provider is None or retriever is None:
         status = "unavailable"
         yield error("unavailable")
-        _log(request_id, language, model, usage, started, status)
+        _log(request_id, language, model, usage, started, status, action_types)
         return
 
     # Embedding a query is CPU work: keep it off the event loop.
@@ -120,7 +139,7 @@ async def chat_events(
         retrieval.dropped_for_budget,
         f" notes={retrieval.notes}" if retrieval.notes else "",
     )
-    system_prompt = build_system_prompt(identity, retrieval.chunks)
+    system_prompt = build_system_prompt(identity, retrieval.chunks, projects)
 
     stream = provider.stream(
         build_messages(system_prompt, request, language),
@@ -128,18 +147,56 @@ async def chat_events(
         temperature=settings.llm_temperature,
         reasoning_effort=reasoning_effort_for(language, settings),
     )
+    parser = ActionPrefixParser()
+    prefix_deadline: float | None = None
+    pending: asyncio.Future | None = None
+
+    def decision(result: PrefixResult) -> list[str]:
+        actions = validate_actions(result.raw, project_ids)
+        action_types.extend(action.type for action in actions)
+        events = [sse("action", {"actions": dump_actions(actions)})]
+        if result.text:
+            events.append(sse("token", {"text": result.text}))
+        return events
+
     try:
         while True:
-            try:
+            # A pending task (not wait_for) so the prefix deadline can fire without
+            # cancelling the provider stream.
+            if pending is None:
+                pending = asyncio.ensure_future(anext(stream))
+            timeout = settings.llm_timeout_seconds
+            if prefix_deadline is not None and not parser.decided:
+                timeout = min(timeout, max(0.0, prefix_deadline - time.monotonic()))
+            done, _ = await asyncio.wait({pending}, timeout=timeout)
+            if not done:
+                if prefix_deadline is not None and not parser.decided:
+                    if result := parser.deadline():
+                        for event in decision(result):
+                            yield event
+                    continue
                 # Inactivity timeout: the server never waits forever on a silent provider.
-                chunk = await asyncio.wait_for(anext(stream), timeout=settings.llm_timeout_seconds)
+                raise TimeoutError
+            finished, pending = pending, None
+            try:
+                chunk = finished.result()
             except StopAsyncIteration:
                 break
             text = chunk.text.translate(_MARKDOWN_MARKERS)
             if text:
-                yield sse("token", {"text": text})
+                if prefix_deadline is None:
+                    prefix_deadline = time.monotonic() + PREFIX_DEADLINE_SECONDS
+                fed = parser.feed(text)
+                if isinstance(fed, PrefixResult):
+                    for event in decision(fed):
+                        yield event
+                elif fed:
+                    yield sse("token", {"text": fed})
             if chunk.usage:
                 usage, model = chunk.usage, chunk.model or model
+        if isinstance(rest := parser.finish(), PrefixResult):
+            for event in decision(rest):
+                yield event
         yield sse(
             "done",
             {
@@ -167,16 +224,27 @@ async def chat_events(
         logger.exception("chat request_id=%s unexpected failure", request_id)
         yield error("unavailable")
     finally:
+        if pending is not None:
+            pending.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await pending
         await stream.aclose()
-        _log(request_id, language, model, usage, started, status)
+        _log(request_id, language, model, usage, started, status, action_types)
 
 
 def _log(
-    request_id: str, language: str, model: str, usage: Usage, started: float, status: str
+    request_id: str,
+    language: str,
+    model: str,
+    usage: Usage,
+    started: float,
+    status: str,
+    action_types: list[str],
 ) -> None:
+    # Action TYPES only: never project ids from the model or anything the visitor wrote.
     logger.info(
         "chat request_id=%s language=%s model=%s input_tokens=%d output_tokens=%d "
-        "latency_ms=%d status=%s",
+        "latency_ms=%d status=%s actions=%s",
         request_id,
         language,
         model,
@@ -184,4 +252,5 @@ def _log(
         usage.output_tokens,
         round((time.perf_counter() - started) * 1000),
         status,
+        ",".join(action_types) or "-",
     )

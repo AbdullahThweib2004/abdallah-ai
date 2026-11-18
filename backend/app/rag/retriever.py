@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 RRF_K = 60  # standard Reciprocal Rank Fusion constant
 CANDIDATES = 20  # results taken from each ranked list before fusion
+# At most this many of the top_k chunks may come from one document, so a question about two
+# projects ("compare A with B") also gets B's sections instead of six sections of A.
+MAX_CHUNKS_PER_DOC = 4
 
 _WORD = re.compile(r"[^\W_]+(?:[+#.][^\W_]+|\+\+)?")
 _STOPWORDS = {
@@ -76,6 +79,26 @@ class RetrievalResult:
     expanded_query: str = ""
     dropped_for_budget: int = 0
     notes: list[str] = field(default_factory=list)
+
+
+def diversify(ranked: list[str], doc_of, top_k: int) -> list[str]:
+    """The best `top_k` ids in rank order, at most MAX_CHUNKS_PER_DOC per document; slots
+    nobody else can fill go back to the capped documents, in rank order."""
+    picked: list[str] = []
+    overflow: list[str] = []
+    per_doc: dict[str, int] = {}
+    for chunk_id in ranked:
+        if len(picked) == top_k:
+            break
+        doc = doc_of(chunk_id)
+        if per_doc.get(doc, 0) >= MAX_CHUNKS_PER_DOC:
+            overflow.append(chunk_id)
+            continue
+        per_doc[doc] = per_doc.get(doc, 0) + 1
+        picked.append(chunk_id)
+    picked += overflow[: top_k - len(picked)]
+    position = {chunk_id: index for index, chunk_id in enumerate(ranked)}
+    return sorted(picked, key=position.__getitem__)
 
 
 class Retriever:
@@ -142,7 +165,11 @@ class Retriever:
             ]
 
         fused = reciprocal_rank_fusion(rankings)
-        ranked = sorted(fused, key=fused.__getitem__, reverse=True)[: self.top_k]
+        ranked = diversify(
+            sorted(fused, key=fused.__getitem__, reverse=True),
+            lambda chunk_id: self._chunks[chunk_id].doc_id,
+            self.top_k,
+        )
 
         # Trim to the token budget: keep the best-scored chunks that fit.
         selected: list[ScoredChunk] = []

@@ -189,3 +189,13 @@ def test_identity_context_is_small_and_complete(documents) -> None:
     assert "Email: t@example.com" in identity
     assert estimate_tokens(identity) <= MAX_IDENTITY_TOKENS
     assert build_identity_context(None, contact) == ""
+
+
+def test_diversify_caps_chunks_per_document() -> None:
+    from app.rag.retriever import MAX_CHUNKS_PER_DOC, diversify
+
+    ranked = [f"a{i}" for i in range(8)] + ["b0", "b1"]
+    picked = diversify(ranked, lambda chunk_id: chunk_id[0], 6)
+    assert picked == [f"a{i}" for i in range(MAX_CHUNKS_PER_DOC)] + ["b0", "b1"]
+    # Nobody else to fill the slots: the capped document gets them back, in rank order.
+    assert diversify([f"a{i}" for i in range(8)], lambda c: c[0], 6) == [f"a{i}" for i in range(6)]

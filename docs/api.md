@@ -100,9 +100,9 @@ Same fields as a list item, plus:
 
 Streams one answer from Abdallah AI. The backend retrieves the knowledge-base chunks relevant
 to the question (hybrid vector + keyword search, see `docs/architecture.md`) and builds the
-prompt from `backend/app/agents/prompts/system_v4.md`, a small pinned identity context and those
-chunks only. Cards are still chosen
-by the frontend's temporary keyword stub, not by the model (that arrives with step 6).
+prompt from `backend/app/agents/prompts/system_v5.md`, a small pinned identity context, the list of
+valid project ids and those chunks only. The model also decides which card to show; the server
+validates that request against the allowlist (see [UI actions](#ui-actions-allowlist)).
 
 Request (strict, unknown fields → 422):
 
@@ -128,6 +128,7 @@ Response: `text/event-stream`. Each event is `event: <name>` + `data: <json>`:
 | Event | Data | When |
 |---|---|---|
 | `start` | `{"request_id": "…", "language": "en" \| "ar"}` | first; `language` is the reply language detected from the message (share of Arabic-script words ≥ 40 %), falling back to `ui_language` |
+| `action` | `{"actions": [{"type": "show_project", "project_id": "…"}, …]}` | exactly once, **before the first `token`**; 0–2 validated card requests (`[]` = keep the current card) |
 | `token` | `{"text": "…"}` | zero or more; the answer text only (reasoning output is discarded server-side) |
 | `done` | `{"usage": {…}, "latency_ms": n, "sources": [{"doc_id", "title", "heading", "project_id"?}]}` | last, on success; `sources` are the retrieved sections (deduplicated, `project_id` only for projects) |
 | `error` | `{"code": "unavailable" \| "timeout" \| "busy", "message": "…"}` | last, on failure; may follow some `token` events (keep the partial answer) |
@@ -246,14 +247,37 @@ of that answer); a provider failure after audio started just ends the stream ear
 
 ## UI actions (allowlist)
 
-The model can only request these actions. The backend rejects unknown action types and unknown
-IDs. The frontend never runs arbitrary code or opens arbitrary URLs returned by the model.
+The model decides which card accompanies an answer; the server validates it before the UI acts.
+Actions can only open internal cards: no URLs, no navigation, no arbitrary ids, no HTML.
 
-| Action | Purpose | Required input |
+**Protocol** (one LLM call, works with streaming and any provider): prompt v5 tells the model to
+start every reply with one line `ACTIONS: [...]` (a JSON array, possibly empty), a newline, then
+the spoken answer. `backend/app/agents/actions.py` buffers the stream until that line is
+complete and cuts it out, so it never reaches the visitor, TTS, History or the logs as text:
+
+- The first non-blank text must start with `ACTIONS:` (case-insensitive; markdown `*`/backticks
+  are stripped first). Anything else is decided at once as `[]` and streamed as answer text.
+- The line ends at the first newline (text after the JSON on the same line is kept as answer).
+  It may be at most 400 characters, and buffering stops 1.5 s after the first text arrives;
+  either way the decision is `[]` and the rest of an unfinished `ACTIONS:` line is dropped,
+  never shown. Malformed JSON → `[]`.
+- Each item is validated with a strict Pydantic discriminated union (`extra="forbid"`, strict
+  types, kebab-case ids). Unknown types, extra fields (`url`, `href`, …), unknown or draft
+  `project_id`s and duplicates are dropped; at most 2 are kept. Rejections are logged by action
+  type and reason only (`type=show_project reason=unknown_project`), never ids or visitor text.
+- The result is sent as the single `action` event before any `token`, so the card opens while
+  the answer is still being written and spoken. The frontend re-checks every action against the
+  types and project ids it knows before opening a card.
+
+| Action | Opens | Input |
 |---|---|---|
-| `show_projects` | Display the project gallery | Optional category filter |
-| `show_project` | Open a specific project | Known `project_id` |
-| `show_experience` | Display education and practical training | None |
-| `show_skills` | Display technical skills | Optional category |
-| `show_contact` | Display public contact options | None |
-| `open_public_link` | Open an approved public link | Allowlisted `link_id` |
+| `show_project` | one project card | `project_id`: an approved project id (listed in the prompt) |
+| `show_projects` | the project gallery | none |
+| `show_skills` | technical skills | none |
+| `show_experience` | practical training | none |
+| `show_education` | education | none |
+| `show_contact` | public contact options | none |
+
+Two actions (e.g. two compared projects) open the first card; the panel offers the second
+with a small "+1" switcher. `open_public_link` (approved `link_id`s from
+`contact/public_links.md`) is planned, not enabled: the model cannot request it yet.

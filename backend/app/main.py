@@ -47,6 +47,12 @@ def create_app(
             if knowledge
             else ""
         )
+        # (id, title) of approved projects: the prompt's action catalog and the allowlist.
+        app.state.projects = (
+            [(project.id, project.title) for project in knowledge.list_projects()]
+            if knowledge
+            else []
+        )
 
         owned_provider = None
         if llm_provider is None:
@@ -93,6 +99,7 @@ def create_app(
     app.state.knowledge = None
     app.state.retriever = None
     app.state.identity = ""
+    app.state.projects = []
     app.state.llm = None
     app.state.stt = None
     app.state.tts = None

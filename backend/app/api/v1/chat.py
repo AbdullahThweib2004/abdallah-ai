@@ -44,6 +44,7 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse | JSONR
         retriever=request.app.state.retriever,
         identity=request.app.state.identity,
         settings=request.app.state.settings,
+        projects=request.app.state.projects,
     )
     return StreamingResponse(
         events,

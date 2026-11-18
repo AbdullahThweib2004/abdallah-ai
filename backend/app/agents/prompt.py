@@ -1,7 +1,9 @@
 """System prompt assembly: the versioned rules plus the KNOWLEDGE for one question.
 
 Since step 5 the KNOWLEDGE section holds only the retrieved chunks (plus a small pinned
-identity context), each labeled `[source: doc_id › heading]`.
+identity context), each labeled `[source: doc_id › heading]`. Since v5 the prompt also lists
+the valid project ids for UI actions (`{project_catalog}`), built from the approved knowledge
+base at startup.
 """
 
 from collections.abc import Sequence
@@ -13,7 +15,7 @@ if TYPE_CHECKING:
     from app.rag.retriever import ScoredChunk
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 IDENTITY_SOURCE = "about › Identity"
 
 
@@ -32,5 +34,21 @@ def format_knowledge(identity: str, chunks: Sequence["ScoredChunk"]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_system_prompt(identity: str, chunks: Sequence["ScoredChunk"]) -> str:
-    return load_prompt_template().replace("{knowledge}", format_knowledge(identity, chunks))
+def format_project_catalog(projects: Sequence[tuple[str, str]]) -> str:
+    """One `- <id>: <title>` line per approved project (the only ids actions may use)."""
+    return "\n".join(f"- {project_id}: {title}" for project_id, title in projects) or "(none)"
+
+
+def build_system_prompt(
+    identity: str,
+    chunks: Sequence["ScoredChunk"],
+    projects: Sequence[tuple[str, str]] = (),
+) -> str:
+    """`projects` = (project_id, title) pairs. The KNOWLEDGE goes in last, so retrieved text
+    can never expand the other placeholders."""
+    return (
+        load_prompt_template()
+        .replace("{project_catalog}", format_project_catalog(projects))
+        .replace("{example_project_id}", projects[0][0] if projects else "none")
+        .replace("{knowledge}", format_knowledge(identity, chunks))
+    )
