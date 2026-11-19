@@ -1,0 +1,26 @@
+# Never upload secrets, private content, local caches or build outputs (CLI deploys upload
+# the working tree; Git deploys only see committed files anyway).
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+knowledge_base/_private/
+chroma_data/
+backend/.models/
+backend/.index/
+backend/.cache/
+backend/.venv/
+backend/knowledge_base/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+frontend/node_modules/
+frontend/.next/
+docs/
+*.wav
+*.mp3
+*.m4a
+CLAUDE.md
+.claude/
+.cursor/

@@ -5,7 +5,8 @@ import { connection } from "next/server";
 
 import type { ContactResponse, Profile, ProjectDetail, ProjectSummary } from "./types";
 
-// Server-side base URL (may be an internal address); falls back to the public one.
+// Server-side base URL (may be an internal address; on Vercel the service binding sets
+// API_BASE_URL to the backend service); falls back to the public one.
 const API_BASE_URL = (
   process.env.API_BASE_URL ??
   process.env.NEXT_PUBLIC_API_BASE_URL ??

@@ -1,10 +1,10 @@
 import type { HealthResponse } from "./types";
 
-// Browser-side base URL. Server components use services/content.ts instead.
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(
-  /\/+$/,
-  "",
-);
+// Browser-side base URL. Server components use services/content.ts instead. Production
+// builds without NEXT_PUBLIC_API_BASE_URL call the API on the same origin (Vercel routes
+// /api/v1/* to the backend service).
+const DEFAULT_API_BASE_URL = process.env.NODE_ENV === "production" ? "" : "http://localhost:8000";
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/+$/, "");
 
 export class ApiError extends Error {
   constructor(
