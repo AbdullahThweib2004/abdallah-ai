@@ -154,7 +154,7 @@ def test_reply_language_instruction_is_appended_to_the_system_prompt(
     assert system.startswith('You are "Abdallah AI"')
     assert "plain text: no markdown" in system
     assert "No praise or evaluations" in system and "عبدالله ذويب" in system
-    assert "ACTIONS:" in system and "- alpha: Alpha" in system  # prompt v6 + project catalog
+    assert "ACTIONS:" in system and "- alpha: Alpha" in system  # prompt v7 + project catalog
 
 
 # --- failures --------------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from app.llm.base import LLMProvider, LLMRateLimitError
 
 DAILY_LIMITS = {"TPD", "RPD", "ASD"}
 DEFAULT_MAX_WAIT_SECONDS = 90.0
-DEFAULT_RESERVE_REQUESTS = 150  # of 1,000/day per model, kept for the live site
+DEFAULT_RESERVE_REQUESTS = 150  # kept for the live site (matters on the free tier: 1,000/day)
 
 
 class QuotaStop(Exception):  # noqa: N818 - a stop signal, not an error
