@@ -11,6 +11,9 @@ media/private/
 chroma_data/
 .models/
 backend/.cache/
+backend/.index/
+backend/knowledge_base/
+.vercel/
 knowledge_base/_private/
 *.sqlite
 *.sqlite3

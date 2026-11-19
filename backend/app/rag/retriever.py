@@ -116,7 +116,11 @@ class Retriever:
     ) -> None:
         self._chunks = {chunk.id: chunk for chunk in chunks}
         self._ids = [chunk.id for chunk in chunks]
-        self._bm25 = BM25Okapi([tokenize(chunk.text) for chunk in chunks]) if chunks else None
+        # BM25 corpus: the token lists precomputed in the index artifact when they match.
+        tokens = getattr(index, "bm25_tokens", None)
+        if tokens is None or len(tokens) != len(chunks):
+            tokens = [tokenize(chunk.text) for chunk in chunks]
+        self._bm25 = BM25Okapi(tokens) if chunks else None
         self._index = index
         self._embedder = embedder
         self._glossary = glossary
@@ -155,7 +159,12 @@ class Retriever:
         if not self.vector_enabled:
             return []
         assert self._index is not None and self._embedder is not None
-        hits = self._index.search(self._embedder.embed_query(query), CANDIDATES)
+        try:
+            query_vector = self._embedder.embed_query(query)
+        except Exception:  # model failed to load (lazily) or to run: BM25 still answers
+            logger.exception("Vector search failed; this query uses BM25 only")
+            return []
+        hits = self._index.search(query_vector, CANDIDATES)
         kept = []
         for chunk_id, score in hits:
             if score >= self.min_score and chunk_id in self._chunks:

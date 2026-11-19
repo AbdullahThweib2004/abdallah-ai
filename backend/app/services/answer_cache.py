@@ -5,12 +5,16 @@ normalized question, the reply language, the knowledge-base hash and the prompt 
 any knowledge or prompt change starts a fresh cache. Follow-ups (with history) are never cached:
 their answers depend on the conversation.
 
-Persistence (optional, `ANSWER_CACHE_DIR`): one JSON file per answer and one MP3 per spoken
-sentence, under a namespace folder for the current knowledge hash + prompt version; folders of
-older namespaces are deleted at startup. Only hashes of questions are stored, never the
-question text. The audio is the assistant's synthesized voice, never visitor audio.
+Storage: `AnswerCache` keeps an in-process LRU, optionally persisted to disk
+(`ANSWER_CACHE_DIR`: one JSON file per answer and one MP3 per spoken sentence, under a
+namespace folder for the current knowledge hash + prompt version; older folders are deleted at
+startup). `RedisAnswerCache` (serverless) stores the same entries in Upstash Redis with a
+30-day TTL, shared by every instance, with the in-process LRU in front. Only hashes of
+questions are stored, never the question text. The audio is the assistant's synthesized voice,
+never visitor audio. The API is async (Redis is a network call); a Redis failure is a miss.
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -22,6 +26,8 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+from app.core.redis import RedisError, UpstashRedis
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +94,11 @@ class AnswerCache:
         self._squashed: dict[str, tuple[str, str]] = {}  # key -> (language, squashed text)
         self._audio: OrderedDict[str, bytes] = OrderedDict()
         self._dir: Path | None = None
+        self.namespace = hashlib.sha256(
+            f"{CACHE_FORMAT}|{kb_hash}|{prompt_version}".encode()
+        ).hexdigest()[:16]
         if directory is not None:
-            namespace = hashlib.sha256(
-                f"{CACHE_FORMAT}|{kb_hash}|{prompt_version}".encode()
-            ).hexdigest()[:16]
-            self._dir = directory / namespace
+            self._dir = directory / self.namespace
             self._load(directory)
 
     # --- answers ---------------------------------------------------------------------------
@@ -100,13 +106,13 @@ class AnswerCache:
     def key_for(self, question: str, language: str) -> str:
         return cache_key(question, language, self.kb_hash, self.prompt_version)
 
-    def get(self, key: str) -> CachedReply | None:
+    async def get(self, key: str) -> CachedReply | None:
         reply = self._replies.get(key)
         if reply is not None:
             self._replies.move_to_end(key)
         return reply
 
-    def put(self, key: str, reply: CachedReply) -> None:
+    async def put(self, key: str, reply: CachedReply) -> None:
         self._remember(key, reply)
         if self._dir is not None:
             try:
@@ -131,7 +137,7 @@ class AnswerCache:
 
     # --- speech ----------------------------------------------------------------------------
 
-    def speech_cacheable(self, text: str, language: str) -> bool:
+    async def speech_cacheable(self, text: str, language: str) -> bool:
         """True when `text` (one spoken sentence) is part of a cached answer."""
         squashed = _squash(text)
         if len(squashed) < 2:
@@ -145,7 +151,7 @@ class AnswerCache:
         payload = json.dumps([CACHE_FORMAT, _squash(spoken), language, voice], ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def get_audio(self, key: str) -> bytes | None:
+    async def get_audio(self, key: str) -> bytes | None:
         audio = self._audio.get(key)
         if audio is None and self._dir is not None:
             path = self._dir / "audio" / f"{key}.mp3"
@@ -156,7 +162,7 @@ class AnswerCache:
             self._audio.move_to_end(key)
         return audio
 
-    def put_audio(self, key: str, audio: bytes) -> None:
+    async def put_audio(self, key: str, audio: bytes) -> None:
         self._audio[key] = audio
         while len(self._audio) > self._max * 4:  # a few sentences per answer
             self._audio.popitem(last=False)
@@ -189,3 +195,109 @@ class AnswerCache:
                 path.unlink(missing_ok=True)
         if self._replies:
             logger.info("Answer cache: %d answers loaded from disk", len(self._replies))
+
+
+REDIS_TTL_SECONDS = 30 * 86_400
+SPEECH_REFRESH_SECONDS = 60.0
+
+
+class RedisAnswerCache(AnswerCache):
+    """Answers and their audio in Upstash Redis (shared by all serverless instances), with the
+    in-process LRU in front. Keys live under the namespace (knowledge hash + prompt version),
+    so a change starts fresh and old entries simply expire."""
+
+    def __init__(
+        self,
+        redis: UpstashRedis,
+        *,
+        kb_hash: str,
+        prompt_version: str,
+        max_entries: int = 500,
+        clock: Any = time.monotonic,
+    ) -> None:
+        super().__init__(kb_hash=kb_hash, prompt_version=prompt_version, max_entries=max_entries)
+        self._redis = redis
+        self._prefix = f"aa:cache:{self.namespace}"
+        self._clock = clock
+        self._speech_loaded_at: float | None = None
+
+    async def get(self, key: str) -> CachedReply | None:
+        if (reply := await super().get(key)) is not None:
+            return reply
+        try:
+            raw = await self._redis.execute("GET", f"{self._prefix}:ans:{key}")
+        except RedisError as exc:
+            logger.warning("Answer cache: Redis read failed (%s)", exc)
+            return None
+        if not raw:
+            return None
+        try:
+            reply = CachedReply(**json.loads(raw))
+        except (ValueError, TypeError):
+            return None
+        self._remember(key, reply)
+        return reply
+
+    async def put(self, key: str, reply: CachedReply) -> None:
+        self._remember(key, reply)
+        speech = json.dumps([reply.language, _squash(reply.text)], ensure_ascii=False)
+        try:
+            await self._redis.pipeline(
+                [
+                    ["SET", f"{self._prefix}:ans:{key}",
+                     json.dumps(asdict(reply), ensure_ascii=False), "EX", REDIS_TTL_SECONDS],
+                    ["HSET", f"{self._prefix}:speech", key, speech],
+                    ["EXPIRE", f"{self._prefix}:speech", REDIS_TTL_SECONDS],
+                ]
+            )  # fmt: skip
+        except RedisError as exc:
+            logger.warning("Answer cache: Redis write failed (%s)", exc)
+
+    async def _refresh_speech(self) -> None:
+        now = self._clock()
+        if self._speech_loaded_at is not None and now - self._speech_loaded_at < (
+            SPEECH_REFRESH_SECONDS
+        ):
+            return
+        self._speech_loaded_at = now
+        try:
+            flat = await self._redis.execute("HGETALL", f"{self._prefix}:speech") or []
+        except RedisError as exc:
+            logger.warning("Answer cache: Redis read failed (%s)", exc)
+            return
+        for key, value in zip(flat[::2], flat[1::2], strict=True):
+            try:
+                language, squashed = json.loads(value)
+            except (ValueError, TypeError):
+                continue
+            self._squashed[key] = (language, squashed)
+
+    async def speech_cacheable(self, text: str, language: str) -> bool:
+        if await super().speech_cacheable(text, language):
+            return True
+        await self._refresh_speech()
+        return await super().speech_cacheable(text, language)
+
+    async def get_audio(self, key: str) -> bytes | None:
+        if (audio := await super().get_audio(key)) is not None:
+            return audio
+        try:
+            raw = await self._redis.execute("GET", f"{self._prefix}:audio:{key}")
+        except RedisError as exc:
+            logger.warning("Answer cache: Redis read failed (%s)", exc)
+            return None
+        if not raw:
+            return None
+        audio = base64.b64decode(raw)
+        await super().put_audio(key, audio)
+        return audio
+
+    async def put_audio(self, key: str, audio: bytes) -> None:
+        await super().put_audio(key, audio)
+        try:
+            await self._redis.execute(
+                "SET", f"{self._prefix}:audio:{key}", base64.b64encode(audio).decode("ascii"),
+                "EX", REDIS_TTL_SECONDS,
+            )  # fmt: skip
+        except RedisError as exc:
+            logger.warning("Answer cache: Redis write failed (%s)", exc)

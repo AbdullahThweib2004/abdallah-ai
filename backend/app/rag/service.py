@@ -1,4 +1,4 @@
-"""Assemble the retriever from settings: chunks → embedder → persistent index → hybrid search."""
+"""Assemble the retriever from settings: chunks → embedder → index artifact → hybrid search."""
 
 import logging
 from collections.abc import Sequence
@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from app.core.config import Settings
 from app.knowledge.loader import KnowledgeDocument
 from app.rag.chunking import chunk_documents
-from app.rag.embeddings import Embedder, FakeEmbedder, FastEmbedEmbedder
+from app.rag.embeddings import Embedder, FakeEmbedder, LazyEmbedder, OnnxEmbedder
 from app.rag.index import KnowledgeIndex
 from app.rag.query_expansion import glossary_terms
 from app.rag.retriever import Retriever
@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 def build_embedder(settings: Settings) -> Embedder:
     if settings.rag_embedder == "fake":
         return FakeEmbedder()
-    return FastEmbedEmbedder(settings.rag_embedding_model, settings.rag_models_dir)
+    return LazyEmbedder(
+        settings.rag_embedding_model,
+        lambda: OnnxEmbedder(settings.rag_embedding_model, settings.rag_models_dir),
+    )
 
 
 def build_retriever(

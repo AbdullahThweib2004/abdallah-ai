@@ -145,6 +145,12 @@ def make_settings(knowledge_base_dir: Path, **overrides: Any) -> Settings:
         "answer_cache_enabled": False,
         "answer_cache_prewarm": False,
         "answer_cache_dir": None,
+        # In-memory state and the direct peer IP, even if Upstash/Vercel vars are exported.
+        "redis_rest_url": None,
+        "redis_rest_token": None,
+        "vercel": False,
+        "vercel_env": None,
+        "trust_proxy_headers": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

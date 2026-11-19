@@ -469,12 +469,13 @@ def test_speak_daily_character_cap(make_client, fixture_kb: Path) -> None:
     assert client.post(SPEAK, json={"text": "C" * 10, "language": "en"}).status_code == 200
 
 
-def test_char_budget_resets_daily() -> None:
+@pytest.mark.anyio
+async def test_char_budget_resets_daily() -> None:
     now = [1_000_000.0]
     budget = CharBudget(100, clock=lambda: now[0])
-    assert budget.try_consume(80)
-    assert not budget.try_consume(30)
-    budget.exhaust()
+    assert await budget.try_consume(80)
+    assert not await budget.try_consume(30)
+    await budget.exhaust()
     assert budget.remaining == 0
     now[0] += 86_400
     assert budget.remaining == 100

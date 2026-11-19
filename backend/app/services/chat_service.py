@@ -171,7 +171,7 @@ async def chat_events(
         if cache is not None and not request.history
         else None
     )
-    if cache is not None and cache_key and (cached := cache.get(cache_key)):
+    if cache is not None and cache_key and (cached := await cache.get(cache_key)):
         async for event in replay_cached(
             cached, started, settings.answer_cache_stream_delay_ms / 1000
         ):
@@ -278,7 +278,7 @@ async def chat_events(
             and cache_key
             and _cacheable(request_id, model, provider.model, answer_parts)
         ):
-            cache.put(
+            await cache.put(
                 cache_key,
                 CachedReply(
                     text="".join(answer_parts),

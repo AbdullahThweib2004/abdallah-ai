@@ -12,8 +12,10 @@ import time
 from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from app.core.limits import log_rate_limit
+from app.core.redis import RedisError, UpstashRedis
 from app.models.content import ProfileResponse, ProjectSummary
 from app.models.voice import (
     AUDIO_MS_TOLERANCE,
@@ -179,9 +181,18 @@ async def transcribe(
 # --- TTS ----------------------------------------------------------------------------------------
 
 
+class TTSBudget(Protocol):
+    """Global daily budget of synthesized characters (UTC day)."""
+
+    async def try_consume(self, chars: int) -> bool: ...
+
+    async def refund(self, chars: int) -> None: ...
+
+    async def exhaust(self) -> None: ...
+
+
 class CharBudget:
-    """Global daily budget of synthesized characters (UTC day), in memory like the rate
-    limiter (step 10 can move it to a shared store)."""
+    """In-memory budget (one process: local dev and tests)."""
 
     def __init__(self, per_day: int, clock: Callable[[], float] = time.time) -> None:
         self._per_day = per_day
@@ -194,17 +205,20 @@ class CharBudget:
         if day != self._day:
             self._day, self._used = day, 0
 
-    def try_consume(self, chars: int) -> bool:
+    def consume_now(self, chars: int) -> bool:
         self._roll()
         if self._used + chars > self._per_day:
             return False
         self._used += chars
         return True
 
-    def refund(self, chars: int) -> None:
+    async def try_consume(self, chars: int) -> bool:
+        return self.consume_now(chars)
+
+    async def refund(self, chars: int) -> None:
         self._used = max(0, self._used - chars)
 
-    def exhaust(self) -> None:
+    async def exhaust(self) -> None:
         """The provider said its quota is gone: stop calling it until tomorrow."""
         self._roll()
         self._used = self._per_day
@@ -215,6 +229,68 @@ class CharBudget:
         return max(0, self._per_day - self._used)
 
 
+# KEYS: today's counter. ARGV: chars, per_day, ttl seconds.
+_CONSUME_SCRIPT = """
+local used = tonumber(redis.call('GET', KEYS[1]) or '0')
+if used + tonumber(ARGV[1]) > tonumber(ARGV[2]) then return 0 end
+redis.call('INCRBY', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[3])
+return 1
+"""
+_REFUND_SCRIPT = """
+local left = tonumber(redis.call('GET', KEYS[1]) or '0') - tonumber(ARGV[1])
+if left < 0 then left = 0 end
+redis.call('SET', KEYS[1], left, 'EX', ARGV[2])
+return left
+"""
+
+
+class RedisCharBudget:
+    """The same budget shared by every serverless instance (Upstash Redis). Falls back to an
+    in-memory budget (per instance) if Redis is unreachable."""
+
+    def __init__(
+        self,
+        redis: UpstashRedis,
+        per_day: int,
+        *,
+        scope: str,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._redis = redis
+        self._per_day = per_day
+        self._prefix = f"aa:{scope}:tts_chars"
+        self._clock = clock
+        self._fallback = CharBudget(per_day, clock)
+
+    def _key(self) -> tuple[str, int]:
+        now = self._clock()
+        day = int(now // DAY_SECONDS)
+        return f"{self._prefix}:{day}", int((day + 1) * DAY_SECONDS - now) + 3600
+
+    async def try_consume(self, chars: int) -> bool:
+        key, ttl = self._key()
+        try:
+            return bool(await self._redis.eval(_CONSUME_SCRIPT, [key], [chars, self._per_day, ttl]))
+        except RedisError as exc:
+            logger.warning("TTS budget: Redis unavailable (%s); in-memory fallback", exc)
+            return self._fallback.consume_now(chars)
+
+    async def refund(self, chars: int) -> None:
+        key, ttl = self._key()
+        try:
+            await self._redis.eval(_REFUND_SCRIPT, [key], [chars, ttl])
+        except RedisError:
+            await self._fallback.refund(chars)
+
+    async def exhaust(self) -> None:
+        key, ttl = self._key()
+        try:
+            await self._redis.execute("SET", key, self._per_day, "EX", ttl)
+        except RedisError:
+            await self._fallback.exhaust()
+
+
 @dataclass(frozen=True)
 class SpeechStream:
     media_type: str
@@ -223,7 +299,7 @@ class SpeechStream:
 
 async def speak(
     tts: TTSProvider | None,
-    budget: CharBudget,
+    budget: TTSBudget,
     text: str,
     language: Language,
     *,
@@ -243,16 +319,16 @@ async def speak(
     if not spoken:
         raise VoiceRequestError("nothing_to_say", 422, "Nothing speakable in this text.")
     audio_key: str | None = None
-    if cache is not None and cache.speech_cacheable(text, language):
+    if cache is not None and await cache.speech_cacheable(text, language):
         audio_key = cache.audio_key(spoken, language, voice)
-        if (audio := cache.get_audio(audio_key)) is not None:
+        if (audio := await cache.get_audio(audio_key)) is not None:
             logger.info("TTS cache hit chars=%d language=%s", len(spoken), language)
 
             async def cached() -> AsyncIterator[bytes]:
                 yield audio
 
             return SpeechStream(tts.media_type, cached())
-    if not budget.try_consume(len(spoken)):
+    if not await budget.try_consume(len(spoken)):
         log_rate_limit("app", "tts_daily_chars", route="tts")
         raise VoiceRequestError("tts_quota", 429, "Today's voice budget is used up.")
 
@@ -261,9 +337,9 @@ async def speak(
     try:
         first = await anext(chunks)
     except (VoiceError, StopAsyncIteration) as exc:
-        budget.refund(len(spoken))
+        await budget.refund(len(spoken))
         if isinstance(exc, VoiceQuotaError):
-            budget.exhaust()
+            await budget.exhaust()
         logger.warning("TTS failed before audio (%s); browser voice fallback", exc or "empty")
         raise VoiceRequestError(
             "tts_unavailable", 503, "Server voice is not available right now."
@@ -289,6 +365,6 @@ async def speak(
             logger.warning("TTS stream ended early: %s", exc)
             return
         if audio_key and cache is not None:  # only complete audio is ever cached
-            cache.put_audio(audio_key, b"".join(parts))
+            await cache.put_audio(audio_key, b"".join(parts))
 
     return SpeechStream(tts.media_type, body())

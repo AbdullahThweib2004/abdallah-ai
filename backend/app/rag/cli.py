@@ -1,6 +1,6 @@
 """RAG command line tools.
 
-uv run python -m app.rag.cli build             # (re)build the index from approved docs
+uv run python -m app.rag.cli build             # (re)build the index artifact (build hook)
 uv run python -m app.rag.cli stats             # what is indexed
 uv run python -m app.rag.cli query "<text>"    # ranked chunks with scores (debugging)
 uv run python -m app.rag.cli download-models   # pre-fetch the embedding model
@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from app.core.config import get_settings
 from app.rag.chunking import chunk_documents
 from app.rag.embeddings import download_model
-from app.rag.index import KnowledgeIndex
+from app.rag.index import KnowledgeIndex, content_hash
 from app.rag.service import build_embedder, build_retriever
 from app.services.knowledge_service import load_knowledge_service
 
@@ -42,15 +42,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "build":
         chunks = chunk_documents(knowledge.documents)
-        KnowledgeIndex(settings.rag_index_dir, build_embedder(settings)).build(chunks)
+        index = KnowledgeIndex(settings.rag_index_dir, build_embedder(settings))
+        index.build(chunks)
+        if not (settings.rag_index_dir / "index.json").is_file():
+            print(f"Could not write the index to {settings.rag_index_dir}", file=sys.stderr)
+            return 1
         print(f"Built index: {len(chunks)} chunks in {settings.rag_index_dir}")
         return 0
 
     if args.command == "stats":
         chunks = chunk_documents(knowledge.documents)
         index = KnowledgeIndex(settings.rag_index_dir, build_embedder(settings))
+        up_to_date = index.stored_hash() == content_hash(chunks, index.stats()["embedder"])
         stats = index.stats()
-        up_to_date = index.stored_hash() is not None and not index.ensure(chunks)
         print(f"Index:        {settings.rag_index_dir}")
         for key, value in stats.items():
             print(f"{key + ':':13} {value}")

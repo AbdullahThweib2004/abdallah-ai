@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
@@ -9,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agents.prompt import PROMPT_VERSION
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.redis import UpstashRedis
+from app.core.security import SecurityHeadersMiddleware
 from app.core.version import VERSION
 from app.llm.base import LLMConfigError, LLMProvider
 from app.llm.factory import build_provider
@@ -16,11 +19,11 @@ from app.rag.chunking import chunk_documents
 from app.rag.identity import build_identity_context
 from app.rag.index import content_hash
 from app.rag.service import build_retriever
-from app.services.answer_cache import AnswerCache
+from app.services.answer_cache import AnswerCache, RedisAnswerCache
 from app.services.knowledge_service import load_knowledge_service
 from app.services.prewarm import prewarm
-from app.services.rate_limit import InMemoryRateLimiter, RateLimiter
-from app.services.voice_service import CharBudget, build_vocabulary
+from app.services.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
+from app.services.voice_service import CharBudget, RedisCharBudget, build_vocabulary
 from app.voice.base import STTProvider, TTSProvider, VoiceConfigError
 from app.voice.factory import build_stt, build_tts
 
@@ -29,6 +32,31 @@ logger = logging.getLogger(__name__)
 
 # APP_ENV=development: per-IP limits are this many times higher (local testing, evals).
 DEV_LIMIT_FACTOR = 5
+
+
+def build_redis(settings: Settings) -> UpstashRedis | None:
+    if settings.redis_rest_url and settings.redis_rest_token:
+        return UpstashRedis(settings.redis_rest_url, settings.redis_rest_token.get_secret_value())
+    if settings.vercel:
+        logger.warning("No Redis configured on Vercel: limits and caches are per instance")
+    return None
+
+
+def build_answer_cache(settings: Settings, knowledge, redis: UpstashRedis | None) -> AnswerCache:
+    kb_hash = content_hash(chunk_documents(knowledge.documents), "answers")
+    if redis is not None:
+        return RedisAnswerCache(
+            redis,
+            kb_hash=kb_hash,
+            prompt_version=PROMPT_VERSION,
+            max_entries=settings.answer_cache_max_entries,
+        )
+    return AnswerCache(
+        kb_hash=kb_hash,
+        prompt_version=PROMPT_VERSION,
+        directory=settings.answer_cache_dir,
+        max_entries=settings.answer_cache_max_entries,
+    )
 
 
 def create_app(
@@ -41,14 +69,19 @@ def create_app(
 ) -> FastAPI:
     """App factory. Tests may inject providers (LLM, STT, TTS) and a rate limiter."""
     settings = settings or get_settings()
+    # Shared state for serverless instances (rate limits, budgets, answer cache).
+    redis = build_redis(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        started = time.perf_counter()
         # Loaded once; None means the content endpoints answer 503 while the API stays up.
         knowledge = load_knowledge_service(settings.knowledge_base_dir)
+        knowledge_s = time.perf_counter() - started
         app.state.knowledge = knowledge
         # The vector index is rebuilt only when the approved knowledge (or model) changed.
         app.state.retriever = build_retriever(knowledge.documents, settings) if knowledge else None
+        retriever_s = time.perf_counter() - started - knowledge_s
         # Without the project list since prompt v6: the action catalog already names every
         # approved project (and says it is the complete list).
         app.state.identity = (
@@ -96,19 +129,15 @@ def create_app(
             if provider:
                 logger.info("%s provider=%s model=%s", name, provider.name, provider.model)
 
-        # Answer cache: keyed by the approved knowledge (hash) and the prompt version.
+        # Answer cache: keyed by the approved knowledge (hash) and the prompt version. Shared
+        # through Redis when configured (serverless), else in memory (+ disk when configured).
         app.state.answer_cache = None
         if settings.answer_cache_enabled and knowledge:
-            kb_hash = content_hash(chunk_documents(knowledge.documents), "answers")
-            app.state.answer_cache = AnswerCache(
-                kb_hash=kb_hash,
-                prompt_version=PROMPT_VERSION,
-                directory=settings.answer_cache_dir,
-                max_entries=settings.answer_cache_max_entries,
-            )
+            app.state.answer_cache = build_answer_cache(settings, knowledge, redis)
         prewarm_task: asyncio.Task | None = None
         if (
             settings.answer_cache_prewarm
+            and not settings.vercel  # serverless: the build pre-warms (app.services.prewarm)
             and app.state.answer_cache is not None
             and app.state.llm is not None
             and app.state.retriever is not None
@@ -124,6 +153,12 @@ def create_app(
                     delay_seconds=settings.answer_cache_prewarm_delay_seconds,
                 )
             )
+        logger.info(
+            "Startup %.2fs (knowledge %.2fs, index %.2fs; embedder loads in the background)",
+            time.perf_counter() - started,
+            knowledge_s,
+            retriever_s,
+        )
         yield
         if prewarm_task and not prewarm_task.done():
             prewarm_task.cancel()
@@ -133,8 +168,19 @@ def create_app(
             await owned_provider.aclose()
         for provider in owned_voice:
             await provider.aclose()
+        if redis is not None:
+            await redis.aclose()
 
-    app = FastAPI(title="Abdallah AI API", version=VERSION, lifespan=lifespan)
+    # Interactive API docs only outside production (no need to publish the schema).
+    public_docs = settings.app_env != "production"
+    app = FastAPI(
+        title="Abdallah AI API",
+        version=VERSION,
+        lifespan=lifespan,
+        docs_url="/docs" if public_docs else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if public_docs else None,
+    )
     app.state.settings = settings
     app.state.knowledge = None
     app.state.retriever = None
@@ -147,24 +193,43 @@ def create_app(
     app.state.answer_cache = None
     # Per-IP limits only (the global daily caps stay): 5x higher in development.
     factor = DEV_LIMIT_FACTOR if settings.app_env == "development" else 1
-    app.state.rate_limiter = rate_limiter or InMemoryRateLimiter(
-        per_minute=settings.chat_rate_per_minute * factor,
-        per_day=settings.chat_rate_per_day * factor,
-        global_per_day=settings.chat_max_requests_per_day,
+
+    def limiter(name: str, per_minute: int, per_day: int, global_per_day: int) -> RateLimiter:
+        if redis is not None:
+            return RedisRateLimiter(
+                redis, name=name, scope=settings.state_scope, per_minute=per_minute,
+                per_day=per_day, global_per_day=global_per_day,
+            )  # fmt: skip
+        return InMemoryRateLimiter(
+            per_minute=per_minute, per_day=per_day, global_per_day=global_per_day
+        )
+
+    app.state.rate_limiter = rate_limiter or limiter(
+        "chat",
+        settings.chat_rate_per_minute * factor,
+        settings.chat_rate_per_day * factor,
+        settings.chat_max_requests_per_day,
     )
     # Every voice question also becomes a chat turn, so it shares the chat's daily limits.
-    app.state.voice_rate_limiter = InMemoryRateLimiter(
-        per_minute=settings.voice_rate_per_minute * factor,
-        per_day=settings.chat_rate_per_day * factor,
-        global_per_day=settings.chat_max_requests_per_day,
+    app.state.voice_rate_limiter = limiter(
+        "voice",
+        settings.voice_rate_per_minute * factor,
+        settings.chat_rate_per_day * factor,
+        settings.chat_max_requests_per_day,
     )
     # One call per spoken sentence; the character budget is the real cost guard.
-    app.state.tts_rate_limiter = InMemoryRateLimiter(
-        per_minute=settings.tts_rate_per_minute * factor,
-        per_day=settings.chat_rate_per_day * 10 * factor,
-        global_per_day=settings.chat_max_requests_per_day * 10,
+    app.state.tts_rate_limiter = limiter(
+        "tts",
+        settings.tts_rate_per_minute * factor,
+        settings.chat_rate_per_day * 10 * factor,
+        settings.chat_max_requests_per_day * 10,
     )
-    app.state.tts_budget = CharBudget(settings.tts_max_chars_per_day)
+    app.state.tts_budget = (
+        RedisCharBudget(redis, settings.tts_max_chars_per_day, scope=settings.state_scope)
+        if redis is not None
+        else CharBudget(settings.tts_max_chars_per_day)
+    )
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

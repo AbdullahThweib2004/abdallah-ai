@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Look for `.env` in backend/ first, then the repo root.
@@ -13,7 +13,7 @@ _ENV_FILES = (_BACKEND_DIR.parent / ".env", _BACKEND_DIR / ".env")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=_ENV_FILES, extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILES, extra="ignore", populate_by_name=True)
 
     app_env: Literal["development", "staging", "production", "test"] = "development"
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
@@ -42,19 +42,22 @@ class Settings(BaseSettings):
     llm_output_cost_per_mtok: float = Field(default=0, ge=0)
 
     # --- Retrieval (RAG, see app/rag) ---
-    rag_embedder: Literal["fastembed", "fake"] = "fastembed"
-    rag_embedding_model: str = "intfloat/multilingual-e5-large"
+    # `onnx`: a small multilingual ONNX model run locally (see app/rag/embeddings.py).
+    rag_embedder: Literal["onnx", "fake"] = "onnx"
+    rag_embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     rag_models_dir: Path = Path(".models")
-    rag_index_dir: Path = Path("../chroma_data")
-    # Budget kept small for Groq's 8k tokens-per-minute free tier; evals/run_retrieval reports
+    # The precomputed index artifact (vectors + BM25 tokens + hash), built by `app.rag.cli
+    # build` (the Vercel build hook) and rebuilt automatically when the knowledge changed.
+    rag_index_dir: Path = Path(".index")
+    # Budget kept small (cost, latency, and Groq's free tier); evals/run_retrieval reports
     # the recall of what the chat really sends at these settings (1.0 at 6 / 1000; top_k 4
     # loses e.g. Nawa's results for "How well does Nawa perform?").
     rag_top_k: int = Field(default=6, ge=1, le=20)
     rag_max_context_tokens: int = Field(default=1000, ge=100)
     # Minimum cosine similarity for a vector hit to count (BM25 hits are kept regardless).
-    # Model-specific: e5 scores sit in a narrow 0.7–0.85 band; 0.70 drops only unrelated hits
-    # without losing recall (see evals.run_retrieval --min-score). Re-tune when changing models.
-    rag_min_score: float = Field(default=0.70, ge=0, le=1)
+    # Model-specific: for MiniLM-L12, 0.25 keeps Recall@6 = 1.0 with a margin (0.35 already
+    # loses cases; see evals.run_retrieval --min-score). Re-tune when changing models.
+    rag_min_score: float = Field(default=0.25, ge=0, le=1)
 
     # --- Answer cache (first-turn questions; see app/services/answer_cache.py) ---
     answer_cache_enabled: bool = True
@@ -67,6 +70,28 @@ class Settings(BaseSettings):
     answer_cache_prewarm_delay_seconds: float = Field(default=30, ge=0)
     # Pause between replayed pieces of a cached answer, so it still types in.
     answer_cache_stream_delay_ms: int = Field(default=15, ge=0, le=500)
+
+    # --- Shared state (rate limits, daily caps, TTS budget, answer cache) ---
+    # Upstash Redis over its REST API. Empty = in-memory (one process: local dev and tests).
+    # Accepts the names the Vercel Marketplace integration sets.
+    redis_rest_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "REDIS_REST_URL", "UPSTASH_REDIS_REST_URL", "KV_REST_API_URL"
+        ),
+    )
+    redis_rest_token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "REDIS_REST_TOKEN", "UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_TOKEN"
+        ),
+    )
+    # Vercel sets VERCEL=1 and VERCEL_ENV (production / preview / development) at runtime.
+    vercel: bool = False
+    vercel_env: str | None = None
+    # Read the client IP from X-Forwarded-For / X-Real-IP (only behind a trusted proxy;
+    # always on when running on Vercel, which overwrites these headers).
+    trust_proxy_headers: bool = False
 
     # --- Chat abuse and cost protection ---
     chat_rate_per_minute: int = Field(default=8, ge=1)
@@ -110,6 +135,9 @@ class Settings(BaseSettings):
         "llm_reasoning_effort_ar",
         "elevenlabs_api_key",
         "answer_cache_dir",
+        "redis_rest_url",
+        "redis_rest_token",
+        "vercel_env",
         mode="before",
     )
     @classmethod
@@ -126,6 +154,24 @@ class Settings(BaseSettings):
         if value is None:
             return None
         return value if value.is_absolute() else (_BACKEND_DIR / value).resolve()
+
+    @model_validator(mode="after")
+    def _bundled_knowledge_base(self) -> "Settings":
+        # Serverless bundles contain only backend/: the build step (app.deploy) copies the
+        # knowledge base to backend/knowledge_base. Use it when the repo copy is absent.
+        bundled = _BACKEND_DIR / "knowledge_base"
+        if not self.knowledge_base_dir.is_dir() and bundled.is_dir():
+            self.knowledge_base_dir = bundled
+        return self
+
+    @property
+    def behind_proxy(self) -> bool:
+        return self.trust_proxy_headers or self.vercel
+
+    @property
+    def state_scope(self) -> str:
+        """Prefix that keeps rate counters of preview deployments apart from production."""
+        return self.vercel_env or self.app_env
 
 
 @lru_cache

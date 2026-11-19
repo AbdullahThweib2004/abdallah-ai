@@ -113,7 +113,7 @@ async def prewarm(
         await sleep(delay_seconds)
     for request in requests if requests is not None else suggestion_requests():
         language = detect_language(request.message, request.ui_language)
-        if cache.get(cache.key_for(request.message, language)) is not None:
+        if await cache.get(cache.key_for(request.message, language)) is not None:
             already += 1
             continue
         if sent_any:
@@ -133,7 +133,7 @@ async def prewarm(
                 # Answered, but stored only if it came from the main model and passed the rule
                 # checks (see chat_service._cacheable).
                 key = cache.key_for(request.message, language)
-                if cache.get(key) is not None:
+                if await cache.get(key) is not None:
                     cached += 1
                 else:
                     failed += 1

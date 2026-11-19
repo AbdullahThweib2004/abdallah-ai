@@ -48,8 +48,8 @@ def summarize(outcomes: list[Outcome]) -> tuple[float, float, float]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", help="fastembed model id (default: RAG_EMBEDDING_MODEL)")
-    parser.add_argument("--embedder", choices=["fastembed", "fake"], help="override RAG_EMBEDDER")
+    parser.add_argument("--model", help="embedding model id (default: RAG_EMBEDDING_MODEL)")
+    parser.add_argument("--embedder", choices=["onnx", "fake"], help="override RAG_EMBEDDER")
     parser.add_argument("--bm25-only", action="store_true", help="disable vector search")
     parser.add_argument("--min-score", type=float, help="override RAG_MIN_SCORE")
     parser.add_argument("--top-k", type=int, help="override RAG_TOP_K for the app-settings recall")

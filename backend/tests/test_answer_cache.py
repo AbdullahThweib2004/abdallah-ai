@@ -94,37 +94,40 @@ def reply(text: str = "He built three projects.", language: str = "en") -> Cache
     return CachedReply(text=text, actions=[], sources=[], language=language, model="m")
 
 
-def test_cache_is_lru_bounded() -> None:
+@pytest.mark.anyio
+async def test_cache_is_lru_bounded() -> None:
     cache = AnswerCache(kb_hash="kb", prompt_version="v6", max_entries=2)
     for key in ("a", "b", "c"):
-        cache.put(key, reply())
-    assert cache.get("a") is None and cache.get("c") is not None and len(cache) == 2
+        await cache.put(key, reply())
+    assert await cache.get("a") is None and await cache.get("c") is not None and len(cache) == 2
 
 
-def test_cache_persists_per_namespace_and_prunes_only_its_own_stale_folders(tmp_path: Path) -> None:
+@pytest.mark.anyio
+async def test_cache_persists_per_namespace_and_prunes_only_its_stale_folders(tmp_path: Path):
     (tmp_path / "unrelated").mkdir()
     old = AnswerCache(kb_hash="kb-old", prompt_version="v5", directory=tmp_path)
-    old.put("k1", reply())
+    await old.put("k1", reply())
     cache = AnswerCache(kb_hash="kb", prompt_version="v6", directory=tmp_path)
-    cache.put("k2", reply("Saved."))
-    cache.put_audio("a1", b"mp3")
+    await cache.put("k2", reply("Saved."))
+    await cache.put_audio("a1", b"mp3")
 
     reloaded = AnswerCache(kb_hash="kb", prompt_version="v6", directory=tmp_path)
-    assert reloaded.get("k2") == cache.get("k2")
-    assert reloaded.get("k1") is None  # another knowledge/prompt version
-    assert reloaded.get_audio("a1") == b"mp3"
+    assert await reloaded.get("k2") == await cache.get("k2")
+    assert await reloaded.get("k1") is None  # another knowledge/prompt version
+    assert await reloaded.get_audio("a1") == b"mp3"
     assert (tmp_path / "unrelated").is_dir()  # never touches folders it did not create
-    assert len([p for p in tmp_path.iterdir() if p.name != "unrelated"]) == 1
+    assert len([p for p in tmp_path.iterdir() if p.name != "unrelated"]) == 1  # noqa: ASYNC240
 
 
-def test_only_sentences_of_cached_answers_are_speech_cacheable() -> None:
+@pytest.mark.anyio
+async def test_only_sentences_of_cached_answers_are_speech_cacheable() -> None:
     cache = AnswerCache(kb_hash="kb", prompt_version="v6")
-    cache.put("k", reply("استخدم React و FastAPI في المشروع. وهو مكتمل.", "ar"))
+    await cache.put("k", reply("استخدم React و FastAPI في المشروع. وهو مكتمل.", "ar"))
     # The frontend may insert a space between Arabic and Latin letters before speaking.
-    assert cache.speech_cacheable("استخدم React و FastAPI في المشروع.", "ar")
-    assert cache.speech_cacheable("وهو مكتمل.", "ar")
-    assert not cache.speech_cacheable("وهو مكتمل.", "en")
-    assert not cache.speech_cacheable("Something else entirely.", "ar")
+    assert await cache.speech_cacheable("استخدم React و FastAPI في المشروع.", "ar")
+    assert await cache.speech_cacheable("وهو مكتمل.", "ar")
+    assert not await cache.speech_cacheable("وهو مكتمل.", "en")
+    assert not await cache.speech_cacheable("Something else entirely.", "ar")
 
 
 # --- chat API ---------------------------------------------------------------------------------
@@ -248,7 +251,7 @@ async def test_prewarm_answers_every_chip_once_sequentially_and_waits_on_limits(
     # Every chip is now answered from the cache, in both languages, without the provider.
     for request in suggestion_requests():
         language = "ar" if request.ui_language == "ar" else "en"
-        assert pipeline["cache"].get(pipeline["cache"].key_for(request.message, language))
+        assert await pipeline["cache"].get(pipeline["cache"].key_for(request.message, language))
     again = await prewarm(provider=provider, sleep=sleep, **pipeline)
     assert (again.cached, again.already) == (0, 8) and provider.calls == 9
 
@@ -311,7 +314,7 @@ def test_per_ip_limits_are_five_times_higher_in_development(fixture_kb, app_env,
     settings = make_settings(fixture_kb, app_env=app_env, chat_rate_per_minute=8)
     app = create_app(settings)
     limiter = app.state.rate_limiter
-    allowed = sum(limiter.check("1.2.3.4").allowed for _ in range(per_minute + 1))
+    allowed = sum(limiter.check_now("1.2.3.4").allowed for _ in range(per_minute + 1))
     assert allowed == per_minute
     assert app.state.voice_rate_limiter._per_minute == settings.voice_rate_per_minute * (
         5 if app_env == "development" else 1

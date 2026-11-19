@@ -13,7 +13,12 @@ router = APIRouter(tags=["chat"])
 
 
 def _client_key(request: Request) -> str:
-    # Direct peer address. Behind a proxy (step 10) this must read the trusted forwarded header.
+    """The visitor's IP. Behind a trusted proxy (Vercel overwrites these headers) it comes from
+    X-Real-IP / the first X-Forwarded-For entry; otherwise from the direct peer."""
+    if request.app.state.settings.behind_proxy:
+        forwarded = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for", "")
+        if ip := forwarded.split(",")[0].strip():
+            return ip
     return request.client.host if request.client else "unknown"
 
 
@@ -27,7 +32,7 @@ def _client_key(request: Request) -> str:
     },
 )
 async def chat(body: ChatRequest, request: Request) -> StreamingResponse | JSONResponse:
-    decision = request.app.state.rate_limiter.check(_client_key(request))
+    decision = await request.app.state.rate_limiter.check(_client_key(request))
     if not decision.allowed:
         assert decision.reason is not None
         log_rate_limit(

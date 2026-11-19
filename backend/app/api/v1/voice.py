@@ -52,8 +52,8 @@ def _error(code: VoiceErrorCode, status_code: int, detail: str, **headers: str) 
     return JSONResponse(payload.model_dump(), status_code=status_code, headers=headers or None)
 
 
-def _rate_limited(request: Request, limiter_name: str) -> JSONResponse | None:
-    decision = getattr(request.app.state, limiter_name).check(_client_key(request))
+async def _rate_limited(request: Request, limiter_name: str) -> JSONResponse | None:
+    decision = await getattr(request.app.state, limiter_name).check(_client_key(request))
     if decision.allowed:
         return None
     assert decision.reason is not None
@@ -111,7 +111,7 @@ async def _read_capped_body(request: Request) -> bytes | None:
     },
 )
 async def transcribe_audio(request: Request) -> TranscribeResponse | JSONResponse:
-    if limited := _rate_limited(request, "voice_rate_limiter"):
+    if limited := await _rate_limited(request, "voice_rate_limiter"):
         return limited
     body = await _read_capped_body(request)
     if body is None:
@@ -153,7 +153,7 @@ async def transcribe_audio(request: Request) -> TranscribeResponse | JSONRespons
     responses={200: {"content": {"audio/mpeg": {}}, "description": "Streamed MP3"}, **_ERRORS},
 )
 async def speak_text(body: SpeakRequest, request: Request) -> StreamingResponse | JSONResponse:
-    if limited := _rate_limited(request, "tts_rate_limiter"):
+    if limited := await _rate_limited(request, "tts_rate_limiter"):
         return limited
     try:
         tts = request.app.state.tts
