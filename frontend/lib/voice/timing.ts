@@ -20,7 +20,7 @@ export type Token = { text: string; start: number; end: number };
 export type TimedToken = Token & { t0: number; t1: number };
 
 const LOOKAHEAD = 24;
-const DIACRITICS = /[ً-ٰٟـ]/;
+const DIACRITICS = /[\u064B-\u065F\u0670\u0640]/;
 const DROPPED = /[\s\p{P}\p{S}]/u;
 const FOLD: Record<string, string> = { "أ": "ا", "إ": "ا", "آ": "ا", "ى": "ي" };
 

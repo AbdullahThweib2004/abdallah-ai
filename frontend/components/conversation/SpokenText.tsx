@@ -16,9 +16,13 @@ type Props = {
   entryKey: string;
 };
 
-const ARABIC = /[؀-ۿ]/;
+// Arabic LETTERS only: Arabic punctuation (\u060C \u061B \u061F) may follow an English word.
+const ARABIC_LETTER = /[\u0621-\u064A\u0671-\u06D3]/;
 const LATIN = /[A-Za-z0-9]/;
-const isLatin = (token: Token) => LATIN.test(token.text) && !ARABIC.test(token.text);
+const isLatin = (token: Token) => LATIN.test(token.text) && !ARABIC_LETTER.test(token.text);
+// Sentence punctuation after an English word stays outside its <bdi>, in the right-to-left
+// flow (as lib/text/bidi.tsx does): "C++." renders as <bdi>C++</bdi>. in Arabic text.
+const TRAILING = /[.,:;!?\u060C\u061B\u061F\u2026]+$/;
 
 /**
  * One transcript entry as word spans (`.tw`, data-s/data-e = offsets in `text`, data-state =
@@ -45,22 +49,30 @@ export function SpokenText({ text, lang, rtl, view, entryKey }: Props) {
 
   tokens.forEach((token, index) => {
     const gap = text.slice(previousEnd, token.start);
-    const word = (
-      <span key={token.start} className="tw" data-s={token.start} data-e={token.end} data-state={wordState(view, token.start, token.end)}>
-        {spaceArabicLatin(token.text)}
+    const state = wordState(view, token.start, token.end);
+    const span = (content: string, key: string) => (
+      <span key={key} className="tw" data-s={token.start} data-e={token.end} data-state={state}>
+        {content}
       </span>
     );
     if (rtl && isLatin(token)) {
+      // The word's punctuation tail is a second span with the same timing, outside the <bdi>.
+      const tail = token.text.match(TRAILING)?.[0] ?? "";
+      const core = span(token.text.slice(0, token.text.length - tail.length), `${token.start}`);
       if (latinRun && !gap.includes("\n")) {
-        latinRun.push(gap, word);
+        latinRun.push(gap, core);
       } else {
         flushRun(index);
         nodes.push(gap);
-        latinRun = [word];
+        latinRun = [core];
+      }
+      if (tail) {
+        flushRun(index);
+        nodes.push(span(tail, `${token.start}t`));
       }
     } else {
       flushRun(index);
-      nodes.push(gap, word);
+      nodes.push(gap, span(spaceArabicLatin(token.text), `${token.start}`));
     }
     previousEnd = token.end;
   });
