@@ -1,4 +1,5 @@
 import { LevelMeter } from "./levels";
+import { VoiceActivity } from "./vad";
 
 /**
  * Records one spoken question from the microphone.
@@ -17,11 +18,7 @@ const SILENCE_MS = silenceMs(process.env.NEXT_PUBLIC_VAD_SILENCE_MS);
 // Give up early if the visitor never starts talking.
 const NO_SPEECH_TIMEOUT_MS = 8_000;
 const TICK_MS = 50;
-// Absolute floor and multiple of the measured background noise that count as voice.
-const MIN_SPEECH_RMS = 0.012;
-const NOISE_FACTOR = 3;
-// Consecutive voiced ticks (~100 ms) before speech counts as started (ignores clicks).
-const SPEECH_START_TICKS = 2;
+// Voice vs background (calibration that keeps early speech): see ./vad.ts.
 
 const MIME_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"];
 
@@ -57,10 +54,7 @@ export class Recorder {
   private readonly meter: LevelMeter;
   private timer: ReturnType<typeof setInterval> | null = null;
   private startedAt = 0;
-  private noiseFloor = 0;
-  private voicedTicks = 0;
-  private heardSpeech = false;
-  private lastVoiceAt = 0;
+  private vad = new VoiceActivity(0);
   private stopped = false;
   private cancelled = false;
 
@@ -139,6 +133,7 @@ export class Recorder {
   private start(): void {
     void this.context.resume();
     this.startedAt = performance.now();
+    this.vad = new VoiceActivity(this.startedAt);
     this.recorder.start(250);
     this.timer = setInterval(() => this.tick(), TICK_MS);
   }
@@ -146,25 +141,14 @@ export class Recorder {
   private tick(): void {
     const now = performance.now();
     const elapsed = now - this.startedAt;
-    const rms = this.meter.rms();
-
-    // Learn the background level during the first 300 ms (before anyone talks).
-    if (elapsed < 300) this.noiseFloor = Math.max(this.noiseFloor, rms);
-    const threshold = Math.max(MIN_SPEECH_RMS, this.noiseFloor * NOISE_FACTOR);
-    if (rms > threshold) {
-      this.voicedTicks++;
-      this.lastVoiceAt = now;
-      if (this.voicedTicks >= SPEECH_START_TICKS) this.heardSpeech = true;
-    } else {
-      this.voicedTicks = 0;
-    }
+    this.vad.update(this.meter.rms(), now);
 
     const remaining = MAX_MS - elapsed;
     this.callbacks.onCountdown(remaining <= COUNTDOWN_FROM_MS ? Math.max(0, remaining) : null);
 
     if (remaining <= 0) return this.stop();
-    if (this.heardSpeech && now - this.lastVoiceAt >= SILENCE_MS) return this.stop();
-    if (!this.heardSpeech && elapsed >= NO_SPEECH_TIMEOUT_MS) return this.stop();
+    if (this.vad.heardSpeech && now - this.vad.lastVoiceAt >= SILENCE_MS) return this.stop();
+    if (!this.vad.heardSpeech && elapsed >= NO_SPEECH_TIMEOUT_MS) return this.stop();
   }
 
   private finish(): void {
@@ -173,13 +157,13 @@ export class Recorder {
     void this.context.close();
     this.callbacks.onCountdown(null);
     if (this.cancelled) return;
-    if (this.heardSpeech) {
+    if (this.vad.heardSpeech) {
       // The moment the visitor stopped talking (for the end-of-speech → first-audio metric).
-      performance.mark("voice:speech-end", { startTime: this.lastVoiceAt });
+      performance.mark("voice:speech-end", { startTime: this.vad.lastVoiceAt });
     }
     this.callbacks.onStop({
       blob: new Blob(this.chunks, { type: this.recorder.mimeType || "audio/webm" }),
-      heardSpeech: this.heardSpeech,
+      heardSpeech: this.vad.heardSpeech,
       durationMs: performance.now() - this.startedAt,
     });
   }
