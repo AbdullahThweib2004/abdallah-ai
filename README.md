@@ -2,6 +2,8 @@
 
 > **Don't just visit Abdallah's portfolio. Talk to Abdallah.**
 
+**Live demo: [abdallah-ai-three.vercel.app](https://abdallah-ai-three.vercel.app)**
+
 An interactive, conversation-first portfolio. Visitors talk to Abdallah's AI representative by
 text or voice, in English or Arabic, and it answers from a verified knowledge base, opens the
 right project cards on its own, shows the sources under every answer and speaks the reply
@@ -47,10 +49,11 @@ through a 3D robot avatar.
 ```mermaid
 flowchart LR
   B["Browser<br/>text · mic · 3D robot"] -->|HTTPS| N["Next.js 16<br/>App Router · React 19"]
-  B -->|"SSE chat · voice"| F["FastAPI<br/>Python 3.12"]
+  B -->|"/api/v1 · SSE chat · voice"| F["FastAPI<br/>Python 3.12"]
   N -->|"content API (SSR)"| F
-  F --> R["RAG<br/>multilingual-e5 + ChromaDB<br/>+ BM25 (RRF fusion)"]
-  R --> KB[("Verified knowledge base<br/>Markdown")]
+  F --> R["RAG<br/>multilingual MiniLM (ONNX)<br/>+ BM25 (RRF fusion)"]
+  R --> KB[("Verified knowledge base<br/>Markdown → index artifact")]
+  F --> U[("Upstash Redis<br/>limits · budgets · cache")]
   F -->|"prompt + retrieved chunks"| G["Groq<br/>gpt-oss-120b (20b fallback)"]
   F -->|"speech to text"| W["Groq Whisper<br/>large-v3"]
   F -->|"text to speech (streamed)"| E["ElevenLabs TTS"]
@@ -59,19 +62,26 @@ flowchart LR
 - **Next.js frontend** (`frontend/`): the conversation UI, cards, `/projects`, `/about` and
   `/contact` pages, EN/AR routing with RTL, microphone capture with voice activity detection, a
   sentence-by-sentence audio queue, and the three.js robot (lazy-loaded after first paint).
+- **Hosting**: one Vercel project (free Hobby plan) with two services. `/api/v1/*` goes to
+  the FastAPI function and everything else to Next.js, all on one domain. See
+  [docs/deploy.md](docs/deploy.md).
 - **FastAPI backend** (`backend/`): strict Pydantic validation, Server-Sent Events for streaming
   answers, per-IP and global rate limits, and provider adapters for the LLM, speech-to-text and
   text-to-speech, so each provider can be swapped by configuration.
-- **RAG**: the knowledge base is split into one chunk per section, embedded with
-  `intfloat/multilingual-e5-large` and stored in ChromaDB. Each question runs vector search and
-  BM25 in parallel and fuses them with Reciprocal Rank Fusion; Arabic questions are expanded with
-  English terms from a glossary. The top 6 chunks (≤ 1,000 tokens) go into the prompt.
+- **RAG**: the knowledge base is split into one chunk per section. At deploy time each chunk is
+  embedded with `paraphrase-multilingual-MiniLM-L12-v2` (int8 ONNX, 118 MB, run with
+  onnxruntime inside the function) into a small precomputed index (vectors, BM25 data and a
+  content hash). Each question runs vector search and BM25 and fuses them with Reciprocal Rank
+  Fusion; Arabic questions are expanded with English terms from a glossary. The top 6 chunks
+  (≤ 1,000 tokens) go into the prompt.
+- **Shared state**: rate limits, daily caps, the voice character budget and the answer cache
+  live in Upstash Redis, shared by every serverless instance (in memory when run locally).
 - **LLM**: Groq `gpt-oss-120b`, with `gpt-oss-20b` as a fallback. A versioned system prompt holds
   the rules (facts only, no praise, the reply language, plain spoken-friendly text) and the
   catalog of valid card actions. A router reads Groq's rate-limit headers and switches to the
   fallback *before* sending when the main model is near its limit.
 - **Answer cache**: first-turn questions (and their speech audio) are cached per knowledge-base
-  version and prompt version; the suggested questions are pre-warmed at startup.
+  version and prompt version; the suggested questions are pre-warmed by the production build.
 - **Voice**: Groq Whisper transcribes the question; ElevenLabs streams the answer as audio, with
   the browser's own voice as a silent fallback.
 
@@ -81,12 +91,14 @@ Measured with the evaluation suites in `backend/evals/` (main model `gpt-oss-120
 
 | Metric | Result |
 |---|---|
-| Retrieval Recall@6 (35 EN/AR cases) | **1.000** (Recall@3 0.971, MRR 0.857) |
-| Chat answer evals (29 EN/AR cases: facts, refusals, injections, Arabic quality) | **28/29 (97 %)** |
-| UI action evals (24 cases: which card the AI opens) | **23/24 (96 %)** |
+| Retrieval Recall@6 (35 EN/AR cases) | **1.000** in English and in Arabic (Recall@3 0.943, MRR 0.837) |
+| Chat answer evals (29 EN/AR cases: facts, refusals, injections, Arabic quality) | **27–28/29 (93–97 %)** |
+| UI action evals (24 cases: which card the AI opens) | **23–24/24 (96–100 %)** |
+| Live site, small eval subset through the production API | chat **6/6**, actions **6/6** |
 | Tokens per question | ~1,950 input / ~80 output |
 | Cost per question | ~$0.00034 |
-| Voice: end of speech → first audio | **2.84 s** EN / **2.81 s** AR (median, incl. the 1.5 s silence wait) |
+| Live site: typed question → first words of the answer | **2.3 s** EN / **2.8 s** AR |
+| Voice: end of speech → first audio | **2.8 s** with a local backend; **5.7–6.2 s** on the live site from Europe (three round trips to US-East) |
 | Robot frame rate (Intel Iris Xe, Chrome traces) | **60 fps**, 0 frames over 33 ms (also on mobile with 4× CPU slowdown) |
 
 Other details worth a look:
@@ -108,7 +120,8 @@ Other details worth a look:
 |---|---|
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, three.js with React Three Fiber |
 | Backend | Python 3.12, FastAPI, Pydantic, httpx, uv, pytest, Ruff |
-| AI | Groq `gpt-oss-120b` / `gpt-oss-20b`, `multilingual-e5-large` (fastembed), ChromaDB, BM25 |
+| AI | Groq `gpt-oss-120b` / `gpt-oss-20b`, `paraphrase-multilingual-MiniLM-L12-v2` (onnxruntime), BM25 |
+| Hosting | Vercel (Next.js and a Python function in one project), Upstash Redis |
 | Voice | Groq Whisper large-v3, ElevenLabs streaming TTS, Web Audio API |
 
 ## Project structure
@@ -157,8 +170,8 @@ npm run dev
 
 ### Knowledge base and index
 
-The search index is rebuilt automatically at startup whenever the knowledge base changes. To work
-with it by hand:
+The search index is rebuilt automatically when the knowledge base changes (on Vercel, in the
+build step). To work with it by hand:
 
 ```bash
 cd backend
@@ -178,6 +191,7 @@ uv run python -m evals.run_retrieval                               # local, no A
 uv run python -m evals.run_chat --model openai/gpt-oss-120b        # real provider
 uv run python -m evals.run_actions --model openai/gpt-oss-120b     # which card the AI opens
 uv run python -m evals.run_chat --only contact-en,contact-ar        # a quick subset (--limit N also works)
+uv run python -m evals.run_chat --api-url https://abdallah-ai-three.vercel.app --limit 6 --delay 8   # the live site
 ```
 
 The chat and action evals default to the cheaper fallback model and stop early, with the results
