@@ -28,6 +28,9 @@ through a 3D robot avatar.
   speaks. If WebGL is missing or lost, a lightweight animated orb takes its place.
 - **AI-driven UI.** The model decides which card to open (a project, all projects, skills,
   experience, education, contact); the server validates every action against an allowlist.
+- **Spoken transcript.** A side panel shows everything the AI says, the greeting first, then
+  every answer under its question. Each word lights up in sync with the voice, timed from the
+  speech provider's character timestamps and the real audio clock.
 - **Sources under answers.** Every answer lists the knowledge-base sections it came from.
 - **Honest by design.** It is clearly labelled as an AI representation, answers only from
   verified facts, and says so when it doesn't know.
