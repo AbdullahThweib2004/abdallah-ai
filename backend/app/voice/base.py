@@ -36,6 +36,15 @@ class VoiceUnavailableError(VoiceError):
 class VoiceQuotaError(VoiceError):
     """The provider's quota or rate limit is exhausted (e.g. a free tier ran out)."""
 
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class VoiceRateLimitError(VoiceUnavailableError):
+    """A short-lived provider limit (too many concurrent requests): retry later; the daily
+    quota is fine."""
+
 
 class STTProvider(Protocol):
     name: str

@@ -21,6 +21,7 @@ from app.voice.audio import inspect_audio
 from app.voice.base import (
     Transcription,
     VoiceQuotaError,
+    VoiceRateLimitError,
     VoiceUnavailableError,
 )
 from app.voice.elevenlabs import ElevenLabsTTS
@@ -663,7 +664,8 @@ async def test_elevenlabs_adapter_streams_with_voice_per_language() -> None:
     ("status", "body", "error"),
     [
         (401, {"detail": {"status": "quota_exceeded", "message": "no credits"}}, VoiceQuotaError),
-        (429, {"detail": {"status": "too_many_concurrent_requests"}}, VoiceQuotaError),
+        # A concurrency limit is short-lived: NOT a quota (the day's budget stays usable).
+        (429, {"detail": {"status": "too_many_concurrent_requests"}}, VoiceRateLimitError),
         (401, {"detail": {"status": "invalid_api_key"}}, VoiceUnavailableError),
         (503, {}, VoiceUnavailableError),
     ],

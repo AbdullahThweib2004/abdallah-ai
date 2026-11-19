@@ -10,7 +10,13 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from app.voice.base import Language, VoiceQuotaError, VoiceUnavailableError
+from app.core.limits import log_rate_limit, parse_duration
+from app.voice.base import (
+    Language,
+    VoiceQuotaError,
+    VoiceRateLimitError,
+    VoiceUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +71,17 @@ class ElevenLabsTTS:
             ) as response:
                 if response.status_code != 200:
                     code = _error_code(await response.aread())
-                    if response.status_code in (402, 429) or code in _QUOTA_CODES:
+                    if response.status_code == 402 or code in _QUOTA_CODES:
+                        log_rate_limit("elevenlabs", code or "quota", model=self.model)
                         raise VoiceQuotaError(f"text-to-speech quota ({response.status_code})")
+                    if response.status_code == 429:
+                        # Concurrency / system-busy limits: only this sentence falls back to
+                        # the browser voice; the day's budget is NOT marked as used up.
+                        retry_after = parse_duration(response.headers.get("retry-after"))
+                        log_rate_limit(
+                            "elevenlabs", code or "429", model=self.model, retry_after=retry_after
+                        )
+                        raise VoiceRateLimitError(f"text-to-speech rate limit (429, {code})")
                     suffix = f", {code}" if code else ""
                     raise VoiceUnavailableError(
                         f"text-to-speech failed ({response.status_code}{suffix})"

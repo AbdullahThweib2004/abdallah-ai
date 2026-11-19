@@ -1,18 +1,24 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agents.prompt import PROMPT_VERSION
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.version import VERSION
 from app.llm.base import LLMConfigError, LLMProvider
 from app.llm.factory import build_provider
+from app.rag.chunking import chunk_documents
 from app.rag.identity import build_identity_context
+from app.rag.index import content_hash
 from app.rag.service import build_retriever
+from app.services.answer_cache import AnswerCache
 from app.services.knowledge_service import load_knowledge_service
+from app.services.prewarm import prewarm
 from app.services.rate_limit import InMemoryRateLimiter, RateLimiter
 from app.services.voice_service import CharBudget, build_vocabulary
 from app.voice.base import STTProvider, TTSProvider, VoiceConfigError
@@ -20,6 +26,9 @@ from app.voice.factory import build_stt, build_tts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# APP_ENV=development: per-IP limits are this many times higher (local testing, evals).
+DEV_LIMIT_FACTOR = 5
 
 
 def create_app(
@@ -40,12 +49,10 @@ def create_app(
         app.state.knowledge = knowledge
         # The vector index is rebuilt only when the approved knowledge (or model) changed.
         app.state.retriever = build_retriever(knowledge.documents, settings) if knowledge else None
+        # Without the project list since prompt v6: the action catalog already names every
+        # approved project (and says it is the complete list).
         app.state.identity = (
-            build_identity_context(
-                knowledge.profile, knowledge.contact(), knowledge.list_projects()
-            )
-            if knowledge
-            else ""
+            build_identity_context(knowledge.profile, knowledge.contact()) if knowledge else ""
         )
         # (id, title) of approved projects: the prompt's action catalog and the allowlist.
         app.state.projects = (
@@ -88,7 +95,40 @@ def create_app(
         for name, provider in (("STT", app.state.stt), ("TTS", app.state.tts)):
             if provider:
                 logger.info("%s provider=%s model=%s", name, provider.name, provider.model)
+
+        # Answer cache: keyed by the approved knowledge (hash) and the prompt version.
+        app.state.answer_cache = None
+        if settings.answer_cache_enabled and knowledge:
+            kb_hash = content_hash(chunk_documents(knowledge.documents), "answers")
+            app.state.answer_cache = AnswerCache(
+                kb_hash=kb_hash,
+                prompt_version=PROMPT_VERSION,
+                directory=settings.answer_cache_dir,
+                max_entries=settings.answer_cache_max_entries,
+            )
+        prewarm_task: asyncio.Task | None = None
+        if (
+            settings.answer_cache_prewarm
+            and app.state.answer_cache is not None
+            and app.state.llm is not None
+            and app.state.retriever is not None
+        ):
+            prewarm_task = asyncio.create_task(
+                prewarm(
+                    provider=app.state.llm,
+                    retriever=app.state.retriever,
+                    identity=app.state.identity,
+                    settings=settings,
+                    projects=app.state.projects,
+                    cache=app.state.answer_cache,
+                    delay_seconds=settings.answer_cache_prewarm_delay_seconds,
+                )
+            )
         yield
+        if prewarm_task and not prewarm_task.done():
+            prewarm_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await prewarm_task
         if owned_provider:
             await owned_provider.aclose()
         for provider in owned_voice:
@@ -104,21 +144,24 @@ def create_app(
     app.state.stt = None
     app.state.tts = None
     app.state.stt_vocabulary = ""
+    app.state.answer_cache = None
+    # Per-IP limits only (the global daily caps stay): 5x higher in development.
+    factor = DEV_LIMIT_FACTOR if settings.app_env == "development" else 1
     app.state.rate_limiter = rate_limiter or InMemoryRateLimiter(
-        per_minute=settings.chat_rate_per_minute,
-        per_day=settings.chat_rate_per_day,
+        per_minute=settings.chat_rate_per_minute * factor,
+        per_day=settings.chat_rate_per_day * factor,
         global_per_day=settings.chat_max_requests_per_day,
     )
     # Every voice question also becomes a chat turn, so it shares the chat's daily limits.
     app.state.voice_rate_limiter = InMemoryRateLimiter(
-        per_minute=settings.voice_rate_per_minute,
-        per_day=settings.chat_rate_per_day,
+        per_minute=settings.voice_rate_per_minute * factor,
+        per_day=settings.chat_rate_per_day * factor,
         global_per_day=settings.chat_max_requests_per_day,
     )
     # One call per spoken sentence; the character budget is the real cost guard.
     app.state.tts_rate_limiter = InMemoryRateLimiter(
-        per_minute=settings.tts_rate_per_minute,
-        per_day=settings.chat_rate_per_day * 10,
+        per_minute=settings.tts_rate_per_minute * factor,
+        per_day=settings.chat_rate_per_day * 10 * factor,
         global_per_day=settings.chat_max_requests_per_day * 10,
     )
     app.state.tts_budget = CharBudget(settings.tts_max_chars_per_day)

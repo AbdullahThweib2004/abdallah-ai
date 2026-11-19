@@ -141,6 +141,10 @@ def make_settings(knowledge_base_dir: Path, **overrides: Any) -> Settings:
         "stt_provider": "fake",
         "tts_provider": "fake",
         "elevenlabs_api_key": None,
+        # Off unless a test turns it on: repeated questions must reach the provider.
+        "answer_cache_enabled": False,
+        "answer_cache_prewarm": False,
+        "answer_cache_dir": None,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

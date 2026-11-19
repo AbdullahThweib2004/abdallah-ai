@@ -4,6 +4,7 @@ import { type RefObject, useCallback, useEffect, useReducer, useRef } from "reac
 
 import type { AnswerListener } from "@/hooks/useVoice";
 
+import { cooldownUntil } from "@/lib/conversation/cooldown";
 import { ChatHttpError, streamChat } from "@/services/chatStream";
 import type { ChatLanguage, ChatSource, ChatTurn, ProjectSummary, UiAction } from "@/services/types";
 
@@ -14,7 +15,9 @@ export type AnswerStatus = "streaming" | "done" | "stopped" | "error";
 export type AnswerError =
   | { kind: "server"; message: string } // friendly text from the API (already localized)
   | { kind: "network" } // no usable response; the UI shows its own message
-  | { kind: "generic" };
+  | { kind: "generic" }
+  // A provider rate limit: the UI counts down to `until` (ms since epoch), then allows asking.
+  | { kind: "busy"; until: number };
 
 export type Message =
   | { id: number; role: "user"; text: string }
@@ -197,6 +200,12 @@ export function useConversation(
     async (text: string, card?: UiAction) => {
       const message = text.trim();
       if (!message || abort.current) return;
+      // Still counting down after a provider limit (the composer is disabled; this also
+      // covers a voice question finishing during the wait).
+      const last = messagesRef.current.findLast((m) => m.role === "assistant");
+      if (last?.role === "assistant" && last.kind === "answer" && last.error?.kind === "busy" && Date.now() < last.error.until) {
+        return;
+      }
       const history = historyOf(messagesRef.current);
       const userId = nextId.current++;
       const id = nextId.current++;
@@ -220,7 +229,11 @@ export function useConversation(
             status = "done";
             dispatch({ type: "finish", id, status: "done", sources: event.sources });
           } else if (event.type === "error") {
-            dispatch({ type: "finish", id, status: "error", error: { kind: "server", message: event.message } });
+            const error: AnswerError =
+              event.code === "busy" && typeof event.retry_after === "number"
+                ? { kind: "busy", until: cooldownUntil(event.retry_after, Date.now()) }
+                : { kind: "server", message: event.message };
+            dispatch({ type: "finish", id, status: "error", error });
           }
         }
         // A stream that ends without `done`/`error` was cut off.
@@ -254,5 +267,11 @@ export function useConversation(
   const lastAssistant = state.messages.findLast((m) => m.role === "assistant");
   const lastUser = state.messages.findLast((m) => m.role === "user");
 
-  return { ...state, streaming, lastAssistant, lastUser, send, stop, showCard, closeCard, spoken };
+  // The end of the current provider-limit wait, if the latest answer hit one.
+  const busyUntil =
+    lastAssistant?.role === "assistant" && lastAssistant.kind === "answer" && lastAssistant.error?.kind === "busy"
+      ? lastAssistant.error.until
+      : null;
+
+  return { ...state, streaming, busyUntil, lastAssistant, lastUser, send, stop, showCard, closeCard, spoken };
 }

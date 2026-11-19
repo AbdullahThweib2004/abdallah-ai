@@ -26,6 +26,7 @@ def build_provider(settings: Settings) -> LLMProvider:
             fallback_model=settings.llm_fallback_model,
             reasoning_effort=settings.llm_reasoning_effort,
             timeout_seconds=settings.llm_timeout_seconds,
+            headroom_tokens=settings.llm_route_headroom_tokens,
         )
 
     if not key:

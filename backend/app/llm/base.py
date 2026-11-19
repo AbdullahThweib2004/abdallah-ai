@@ -40,9 +40,13 @@ class LLMTimeoutError(LLMError):
 class LLMRateLimitError(LLMError):
     """The provider rejected the request with 429."""
 
-    def __init__(self, message: str, retry_after: float | None = None) -> None:
+    def __init__(
+        self, message: str, retry_after: float | None = None, limit: str | None = None
+    ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+        # Which limit ran out ("TPM", "RPD", ...), when the provider says so.
+        self.limit = limit
 
 
 class LLMUnavailableError(LLMError):

@@ -10,6 +10,7 @@
 media/private/
 chroma_data/
 .models/
+backend/.cache/
 knowledge_base/_private/
 *.sqlite
 *.sqlite3

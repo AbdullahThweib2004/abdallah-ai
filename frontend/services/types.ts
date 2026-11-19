@@ -92,5 +92,8 @@ export type ChatEvent =
       usage: { input_tokens: number; output_tokens: number };
       latency_ms: number;
       sources: ChatSource[];
+      /** True when the answer came from the server's answer cache (first-turn questions). */
+      cached?: boolean;
     }
-  | { type: "error"; code: "unavailable" | "timeout" | "busy"; message: string };
+  // `retry_after` (seconds) comes with `busy`: a provider rate limit.
+  | { type: "error"; code: "unavailable" | "timeout" | "busy"; message: string; retry_after?: number };

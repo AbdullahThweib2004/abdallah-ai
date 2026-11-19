@@ -10,6 +10,8 @@ type Props = {
   onSend: (text: string) => void;
   /** While an answer streams or is spoken, the send button becomes a Stop button. */
   busy: boolean;
+  /** Seconds left of a provider-limit wait: sending and the mic are disabled until 0. */
+  waitSeconds?: number;
   onStop: () => void;
   inputRef: Ref<HTMLInputElement>;
   voice: {
@@ -24,15 +26,16 @@ type Props = {
   };
 };
 
-export function Composer({ t, onSend, busy, onStop, inputRef, voice }: Props) {
+export function Composer({ t, onSend, busy, waitSeconds = 0, onStop, inputRef, voice }: Props) {
   const [value, setValue] = useState("");
   const { phase, remainingMs } = voice;
   const listening = phase === "listening";
   const transcribing = phase === "transcribing";
+  const waiting = waitSeconds > 0;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || !value.trim()) return;
+    if (busy || waiting || !value.trim()) return;
     onSend(value);
     setValue("");
   }
@@ -102,12 +105,12 @@ export function Composer({ t, onSend, busy, onStop, inputRef, voice }: Props) {
         <button
           type="button"
           onClick={voice.onToggleMic}
-          disabled={transcribing}
+          disabled={transcribing || (waiting && !listening)}
           aria-pressed={listening}
           aria-label={listening ? t.voice.micStop : transcribing ? t.voice.micBusy : t.voice.micStart}
           aria-describedby="voice-status voice-privacy"
           title={t.voice.micStart}
-          className={`relative grid size-10 shrink-0 place-items-center rounded-full transition-colors disabled:cursor-wait ${
+          className={`relative grid size-10 shrink-0 place-items-center rounded-full transition-colors disabled:cursor-wait disabled:opacity-50 ${
             listening
               ? "bg-accent text-accent-ink hover:bg-accent-strong"
               : "text-mist-200 hover:bg-ink-800 hover:text-mist-50"
@@ -129,8 +132,9 @@ export function Composer({ t, onSend, busy, onStop, inputRef, voice }: Props) {
         <button
           type={showStop ? "button" : "submit"}
           onClick={showStop ? onStop : undefined}
+          disabled={!showStop && waiting}
           aria-label={showStop ? t.conversation.stop : t.conversation.send}
-          className={`grid size-10 shrink-0 place-items-center rounded-full transition-colors ${
+          className={`grid size-10 shrink-0 place-items-center rounded-full transition-colors disabled:cursor-wait disabled:opacity-50 ${
             showStop
               ? "border border-accent/60 bg-ink-800 text-accent hover:bg-ink-700"
               : "bg-accent text-accent-ink hover:bg-accent-strong"

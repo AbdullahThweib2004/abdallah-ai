@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { AvatarStage } from "@/components/avatar/AvatarStage";
 import { type AnswerMessage, type AvatarState, type Message, sameCard, useConversation } from "@/hooks/useConversation";
+import { useCountdown } from "@/hooks/useCountdown";
 import { type AnswerListener, useVoice } from "@/hooks/useVoice";
+import { busyMessage } from "@/lib/conversation/cooldown";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
 import { spaceArabicLatin } from "@/lib/text/spacing";
 import type { VoiceRepliesPreference } from "@/lib/voice/preferences";
@@ -83,9 +85,16 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [card, historyOpen, closeCard]);
 
+  // A provider rate limit on the latest answer: count down, keep the composer disabled meanwhile.
+  const waitSeconds = useCountdown(conversation.busyUntil);
+
   function errorText(answer: AnswerMessage): string | null {
     if (!answer.error) return null;
     if (answer.error.kind === "server") return answer.error.message;
+    if (answer.error.kind === "busy") {
+      const seconds = answer === lastAssistant ? waitSeconds : 0;
+      return seconds > 0 ? busyMessage(t.conversation.errors.busy, locale, seconds) : t.conversation.errors.busyOver;
+    }
     return answer.error.kind === "network" ? t.conversation.errors.network : t.conversation.errors.generic;
   }
 
@@ -193,6 +202,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
               t={t}
               onSend={ask}
               busy={streaming || voice.voicing}
+              waitSeconds={waitSeconds}
               onStop={stopAll}
               inputRef={inputRef}
               voice={{

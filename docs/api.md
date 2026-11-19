@@ -130,8 +130,8 @@ Response: `text/event-stream`. Each event is `event: <name>` + `data: <json>`:
 | `start` | `{"request_id": "…", "language": "en" \| "ar"}` | first; `language` is the reply language detected from the message (share of Arabic-script words ≥ 40 %), falling back to `ui_language` |
 | `action` | `{"actions": [{"type": "show_project", "project_id": "…"}, …]}` | exactly once, **before the first `token`**; 0–2 validated card requests (`[]` = keep the current card) |
 | `token` | `{"text": "…"}` | zero or more; the answer text only (reasoning output is discarded server-side) |
-| `done` | `{"usage": {…}, "latency_ms": n, "sources": [{"doc_id", "title", "heading", "project_id"?}]}` | last, on success; `sources` are the retrieved sections (deduplicated, `project_id` only for projects) |
-| `error` | `{"code": "unavailable" \| "timeout" \| "busy", "message": "…"}` | last, on failure; may follow some `token` events (keep the partial answer) |
+| `done` | `{"usage": {…}, "latency_ms": n, "sources": [{"doc_id", "title", "heading", "project_id"?}], "cached"?: true}` | last, on success; `sources` are the retrieved sections (deduplicated, `project_id` only for projects); `cached` only when the answer came from the answer cache (usage is then 0/0) |
+| `error` | `{"code": "unavailable" \| "timeout" \| "busy", "message": "…", "retry_after"?: n}` | last, on failure; may follow some `token` events (keep the partial answer). `busy` = a provider rate limit; `retry_after` (seconds, from the provider's `Retry-After` or the router's estimate, default 20) drives the UI countdown |
 
 Token text is plain text: markdown emphasis and code marks (`*`, backticks) are stripped
 server-side. `error.message` is a friendly sentence in `ui_language` with no provider details. The server
@@ -149,6 +149,21 @@ event: done
 data: {"usage": {"input_tokens": 2105, "output_tokens": 84}, "latency_ms": 1430, "sources": [{"doc_id": "nawa-inference", "title": "Nawa: Neural Network Inference Engine in C++", "heading": "Results (only verified results)", "project_id": "nawa-inference"}]}
 ```
 
+**Answer cache.** A first-turn question (empty `history`) whose normalized text (case,
+punctuation, Arabic diacritics/alef forms ignored), reply language, knowledge-base hash and
+prompt version match an earlier successful answer is replayed from the cache: the same
+`start` → `action` → `token`s → `done` events (tokens in small pieces, `ANSWER_CACHE_STREAM_DELAY_MS`
+apart), with `done.cached: true` and no provider call. Questions with history are never cached.
+The 8 suggestion chips (EN + AR) are answered at startup (`ANSWER_CACHE_PREWARM`), one at a
+time. Answers persist in `ANSWER_CACHE_DIR` (only hashes of questions are stored). The
+per-IP limits below still count cached answers.
+
+**Limit-aware routing.** The OpenAI-compatible adapter reads Groq's `x-ratelimit-*` headers
+per model and skips a model *before sending* when its projected remaining tokens per minute do
+not cover the prompt estimate + `LLM_ROUTE_HEADROOM_TOKENS` (300), or no requests are left today
+(main → fallback). If every model is predicted over its limit, the stream ends with `busy` and
+the expected wait, without a provider call. A 429 still falls back once, as before.
+
 Limits (in-memory per process; a shared store replaces it in step 10). When a limit is hit the
 response is **HTTP 429** JSON with a `Retry-After` header, not a stream:
 
@@ -161,6 +176,11 @@ response is **HTTP 429** JSON with a `Retry-After` header, not a stream:
 | `rate_limited` | per IP per minute (`CHAT_RATE_PER_MINUTE`, 8) |
 | `daily_limit` | per IP per UTC day (`CHAT_RATE_PER_DAY`, 60) |
 | `daily_cap` | all visitors per UTC day (`CHAT_MAX_REQUESTS_PER_DAY`, 500) |
+
+With `APP_ENV=development` the per-IP limits (chat, voice, TTS) are 5× higher; global caps are
+unchanged. Every 429, ours or a provider's, is logged as one line with its source and limit
+type, never with visitor text:
+`rate_limit source=groq|groq-audio|elevenlabs|app|router [model=…] limit=TPM|RPD|…|per_ip_minute|per_ip_day|global_day|tts_daily_chars [route=…] [retry_after=…]`.
 
 Only valid requests count towards the limits (a 422 does not). Logs contain request id,
 language, model, token usage, latency, status and retrieval metadata (chunk ids, fused scores,
@@ -235,14 +255,17 @@ of that answer); a provider failure after audio started just ends the stream ear
 | 413 | `too_large` / `too_long` | over 2 MB / over 30 s |
 | 415 | `unsupported_type` | not webm/ogg/wav/m4a, or bytes do not match the declared type |
 | 422 | `invalid_request`, `no_speech`, `nothing_to_say` | see above |
-| 429 | `rate_limited`, `daily_limit`, `daily_cap` | per-IP/global request limits (with `Retry-After`) |
-| 429 | `tts_quota` | the daily character budget is used up, or ElevenLabs reported its quota exhausted (server voice then stays off until the next UTC day) |
+| 429 | `rate_limited`, `daily_limit`, `daily_cap` | per-IP/global request limits (with `Retry-After`); `transcribe` also returns `rate_limited` + `Retry-After` when Groq's audio limit is hit |
+| 429 | `tts_quota` | the daily character budget is used up, or ElevenLabs reported its quota/credits exhausted (server voice then stays off until the next UTC day). An ElevenLabs 429 for concurrency/system load is NOT a quota: only that sentence falls back to the browser voice (503 `tts_unavailable`) |
 | 503 | `stt_unavailable` / `tts_unavailable` | provider down, misconfigured, or (`speak`) TTS is `browser` |
 
 | Limit (setting, default) | Applies to |
 |---|---|
 | `VOICE_RATE_PER_MINUTE`, 6 | transcribe, per IP; daily limits shared with chat (`CHAT_RATE_PER_DAY`, `CHAT_MAX_REQUESTS_PER_DAY`) |
 | `TTS_RATE_PER_MINUTE`, 40 | speak, per IP (one call per sentence) |
+
+`speak` serves sentences of cached answers (see Chat › Answer cache) from an audio cache once
+they were synthesized completely: no provider call and no characters used.
 | `TTS_MAX_CHARS_PER_DAY`, 20000 | speak, all visitors per UTC day, counted on the cleaned text; failed calls are refunded |
 
 ## UI actions (allowlist)

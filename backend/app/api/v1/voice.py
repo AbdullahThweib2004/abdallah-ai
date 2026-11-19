@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from app.api.v1.chat import _client_key
+from app.core.limits import log_rate_limit
 from app.models.voice import (
     MAX_AUDIO_BYTES,
     MAX_AUDIO_MS,
@@ -23,6 +24,7 @@ from app.models.voice import (
     VoiceErrorResponse,
 )
 from app.services.multipart import MultipartError, parse_multipart
+from app.services.rate_limit import LIMIT_NAMES
 from app.services.voice_service import VoiceRequestError, speak, transcribe
 
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -55,6 +57,10 @@ def _rate_limited(request: Request, limiter_name: str) -> JSONResponse | None:
     if decision.allowed:
         return None
     assert decision.reason is not None
+    route = "tts" if limiter_name == "tts_rate_limiter" else "voice"
+    log_rate_limit(
+        "app", LIMIT_NAMES[decision.reason], route=route, retry_after=decision.retry_after
+    )
     return _error(
         decision.reason,
         status.HTTP_429_TOO_MANY_REQUESTS,
@@ -136,7 +142,8 @@ async def transcribe_audio(request: Request) -> TranscribeResponse | JSONRespons
             request.app.state.stt_vocabulary,
         )
     except VoiceRequestError as exc:
-        return _error(exc.code, exc.status, exc.detail)
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else {}
+        return _error(exc.code, exc.status, exc.detail, **headers)
 
 
 @router.post(
@@ -149,11 +156,20 @@ async def speak_text(body: SpeakRequest, request: Request) -> StreamingResponse 
     if limited := _rate_limited(request, "tts_rate_limiter"):
         return limited
     try:
+        tts = request.app.state.tts
+        settings = request.app.state.settings
+        voice_id = settings.tts_voice_ar if body.language == "ar" else settings.tts_voice_en
         speech = await speak(
-            request.app.state.tts, request.app.state.tts_budget, body.text, body.language
+            tts,
+            request.app.state.tts_budget,
+            body.text,
+            body.language,
+            cache=request.app.state.answer_cache,
+            voice=f"{tts.name}:{tts.model}:{voice_id}" if tts else "",
         )
     except VoiceRequestError as exc:
-        return _error(exc.code, exc.status, exc.detail)
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else {}
+        return _error(exc.code, exc.status, exc.detail, **headers)
     return StreamingResponse(
         speech.chunks,
         media_type=speech.media_type,

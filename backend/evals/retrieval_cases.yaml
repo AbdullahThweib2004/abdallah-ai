@@ -12,6 +12,10 @@ cases:
     lang: en
     query: "How fast is Nawa on four threads?"
     expect: [{doc_id: nawa-inference, heading: "Results (only verified results)"}]
+  - id: nawa-performance-en
+    lang: en
+    query: "How well does Nawa perform?"
+    expect: [{doc_id: nawa-inference, heading: "Results (only verified results)"}]
   - id: banking-ocr-en
     lang: en
     query: "How does the banking platform read ID photos?"
@@ -53,6 +57,10 @@ cases:
   # --- Arabic ----------------------------------------------------------------------------
   - {id: bank-project-ar, lang: ar, query: "شو عمل بمشروع البنك؟", expect: [{doc_id: banking-intelligence}]}
   - {id: nawa-ar, lang: ar, query: "حدّثني عن مشروع نواة", expect: [{doc_id: nawa-inference}]}
+  - id: nawa-performance-ar
+    lang: ar
+    query: "ما مدى جودة أداء نواة؟"
+    expect: [{doc_id: nawa-inference, heading: "Results (only verified results)"}]
   - id: nawa-results-ar
     lang: ar
     query: "ما هي سرعة نواة في معالجة الصور؟"

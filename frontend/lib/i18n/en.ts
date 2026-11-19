@@ -54,6 +54,15 @@ export const en = {
     errors: {
       network: "Can't reach Abdallah AI right now. Please check your connection and try again.",
       generic: "Something went wrong. Please try again.",
+      // A provider limit: counted down from the server's Retry-After, then the composer re-enables.
+      busy: {
+        one: "Busy right now, try again in 1 second.",
+        two: "Busy right now, try again in {n} seconds.",
+        few: "Busy right now, try again in {n} seconds.",
+        many: "Busy right now, try again in {n} seconds.",
+        other: "Busy right now, try again in {n} seconds.",
+      },
+      busyOver: "You can ask again now.",
     },
   },
   voice: {

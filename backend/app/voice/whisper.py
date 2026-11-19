@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from app.core.limits import groq_limit_type, log_rate_limit, parse_duration
 from app.voice.base import (
     Language,
     Transcription,
@@ -87,7 +88,14 @@ class WhisperSTT:
             raise VoiceUnavailableError("speech-to-text connection failed") from None
 
         if response.status_code == 429:
-            raise VoiceQuotaError("speech-to-text rate limit (429)")
+            retry_after = parse_duration(response.headers.get("retry-after"))
+            log_rate_limit(
+                "groq-audio",
+                groq_limit_type(response.content),
+                model=self.model,
+                retry_after=retry_after,
+            )
+            raise VoiceQuotaError("speech-to-text rate limit (429)", retry_after)
         if response.status_code != 200:
             raise VoiceUnavailableError(f"speech-to-text failed ({response.status_code})")
         try:

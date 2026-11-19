@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from app.rag.retriever import ScoredChunk
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "v5"
+PROMPT_VERSION = "v6"
 IDENTITY_SOURCE = "about › Identity"
 
 

@@ -52,9 +52,18 @@ def main() -> int:
     parser.add_argument("--embedder", choices=["fastembed", "fake"], help="override RAG_EMBEDDER")
     parser.add_argument("--bm25-only", action="store_true", help="disable vector search")
     parser.add_argument("--min-score", type=float, help="override RAG_MIN_SCORE")
+    parser.add_argument("--top-k", type=int, help="override RAG_TOP_K for the app-settings recall")
+    parser.add_argument(
+        "--max-context-tokens",
+        type=int,
+        help="override RAG_MAX_CONTEXT_TOKENS (app-settings recall)",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
+    # What the chat really sends: the configured top_k and token budget (reported separately).
+    app_top_k = args.top_k or settings.rag_top_k
+    app_budget = args.max_context_tokens or settings.rag_max_context_tokens
     updates: dict[str, object] = {
         "rag_index_dir": Path(tempfile.mkdtemp(prefix="rag-eval-")),
         "rag_max_context_tokens": 100_000,  # rank quality only: no budget trimming
@@ -84,8 +93,17 @@ def main() -> int:
         else ("fake" if settings.rag_embedder == "fake" else settings.rag_embedding_model)
     )
 
+    app_retriever = build_retriever(
+        knowledge.documents,
+        settings.model_copy(update={"rag_top_k": app_top_k, "rag_max_context_tokens": app_budget}),
+    )
+    if args.bm25_only:
+        app_retriever._index = None  # noqa: SLF001 - eval-only switch
+
     cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
     outcomes: list[Outcome] = []
+    app_hits: dict[str, list[bool]] = {"en": [], "ar": []}
+    app_misses: list[str] = []
     latencies: list[int] = []
     for case in cases:
         result = retriever.retrieve(case["query"], case.get("previous"))
@@ -95,6 +113,11 @@ def main() -> int:
         ]
         top = [f"{h.chunk.doc_id}›{h.chunk.heading}"[:42] for h in result.chunks[:3]]
         outcomes.append(Outcome(case["id"], case["lang"], ranks[0] if ranks else None, top))
+        sent = app_retriever.retrieve(case["query"], case.get("previous")).chunks
+        hit = any(relevant(h.chunk, case["expect"]) for h in sent)
+        app_hits[case["lang"]].append(hit)
+        if not hit:
+            app_misses.append(case["id"])
 
     average = sum(latencies) / len(latencies)
     print(f"Embedder: {label}   cases: {len(outcomes)}   avg latency: {average:.0f} ms\n")
@@ -109,6 +132,14 @@ def main() -> int:
         subset = [o for o in outcomes if lang == "all" or o.lang == lang]
         r3, r6, mrr = summarize(subset)
         print(f"{lang:6}{r3:>10.3f}{r6:>10.3f}{mrr:>8.3f}   (n={len(subset)})")
+    total = [hit for hits in app_hits.values() for hit in hits]
+    print(
+        f"\nApp settings (top_k={app_top_k}, budget={app_budget} tokens): recall of what the "
+        f"chat really sends = {sum(total) / len(total):.3f} "
+        f"(en {sum(app_hits['en']) / max(len(app_hits['en']), 1):.3f}, "
+        f"ar {sum(app_hits['ar']) / max(len(app_hits['ar']), 1):.3f})"
+        + (f"  misses: {', '.join(app_misses)}" if app_misses else "")
+    )
     en, ar = (summarize([o for o in outcomes if o.lang == lang])[1] for lang in ["en", "ar"])
     return 0 if en >= 0.9 and ar >= 0.9 else 1
 

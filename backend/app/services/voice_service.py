@@ -6,12 +6,14 @@ messages); only sizes, durations, languages and latencies are.
 """
 
 import logging
+import math
 import re
 import time
 from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 
+from app.core.limits import log_rate_limit
 from app.models.content import ProfileResponse, ProjectSummary
 from app.models.voice import (
     AUDIO_MS_TOLERANCE,
@@ -20,6 +22,7 @@ from app.models.voice import (
     TranscribeResponse,
     VoiceErrorCode,
 )
+from app.services.answer_cache import AnswerCache
 from app.services.language import detect_language
 from app.services.rate_limit import DAY_SECONDS
 from app.voice.audio import ALLOWED_TYPES, CANONICAL_TYPE, inspect_audio
@@ -49,11 +52,14 @@ MAX_VOCABULARY_CHARS = 500
 
 
 class VoiceRequestError(Exception):
-    def __init__(self, code: VoiceErrorCode, status: int, detail: str) -> None:
+    def __init__(
+        self, code: VoiceErrorCode, status: int, detail: str, retry_after: int | None = None
+    ) -> None:
         super().__init__(detail)
         self.code = code
         self.status = status
         self.detail = detail
+        self.retry_after = retry_after
 
 
 # --- STT ----------------------------------------------------------------------------------------
@@ -133,6 +139,14 @@ async def transcribe(
             retry_language = detect_language(result.text, "en")
             logger.info("STT detected %s; retrying as %s", result.language, retry_language)
             result = await run(retry_language)
+    except VoiceQuotaError as exc:
+        # Groq's audio limit (logged by the adapter): a short wait, not a broken feature.
+        raise VoiceRequestError(
+            "rate_limited",
+            429,
+            "Too many voice requests. Please wait a moment.",
+            math.ceil(exc.retry_after or 30),
+        ) from None
     except VoiceError as exc:
         logger.warning("STT failed: %s", exc)
         raise VoiceRequestError(
@@ -208,18 +222,38 @@ class SpeechStream:
 
 
 async def speak(
-    tts: TTSProvider | None, budget: CharBudget, text: str, language: Language
+    tts: TTSProvider | None,
+    budget: CharBudget,
+    text: str,
+    language: Language,
+    *,
+    cache: AnswerCache | None = None,
+    voice: str = "",
 ) -> SpeechStream:
     """Clean the text and start synthesis. Errors before the first audio byte raise
     VoiceRequestError (the browser then speaks this answer itself); later errors end the
-    stream early and are only logged."""
+    stream early and are only logged.
+
+    Sentences of cached answers are served from `cache` (no provider call, no characters
+    used); the first synthesis of such a sentence is stored once it completes. `voice`
+    identifies the provider voice in the audio key."""
     if tts is None:
         raise VoiceRequestError("tts_unavailable", 503, "Server voice is not enabled.")
     spoken = clean_for_speech(text, language)
     if not spoken:
         raise VoiceRequestError("nothing_to_say", 422, "Nothing speakable in this text.")
+    audio_key: str | None = None
+    if cache is not None and cache.speech_cacheable(text, language):
+        audio_key = cache.audio_key(spoken, language, voice)
+        if (audio := cache.get_audio(audio_key)) is not None:
+            logger.info("TTS cache hit chars=%d language=%s", len(spoken), language)
+
+            async def cached() -> AsyncIterator[bytes]:
+                yield audio
+
+            return SpeechStream(tts.media_type, cached())
     if not budget.try_consume(len(spoken)):
-        logger.warning("TTS daily character cap reached; browser voice fallback")
+        log_rate_limit("app", "tts_daily_chars", route="tts")
         raise VoiceRequestError("tts_quota", 429, "Today's voice budget is used up.")
 
     started = time.perf_counter()
@@ -244,11 +278,17 @@ async def speak(
     )
 
     async def body() -> AsyncIterator[bytes]:
+        parts = [first]
         yield first
         try:
             async for chunk in chunks:
+                if audio_key:
+                    parts.append(chunk)
                 yield chunk
         except VoiceError as exc:
             logger.warning("TTS stream ended early: %s", exc)
+            return
+        if audio_key and cache is not None:  # only complete audio is ever cached
+            cache.put_audio(audio_key, b"".join(parts))
 
     return SpeechStream(tts.media_type, body())

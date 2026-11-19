@@ -11,6 +11,8 @@ never logged.
 import asyncio
 import json
 import logging
+import math
+import re
 import time
 from collections.abc import AsyncIterator, Sequence
 from contextlib import suppress
@@ -35,6 +37,8 @@ from app.llm.base import (
 )
 from app.models.chat import ChatRequest
 from app.rag.retriever import RetrievalResult, Retriever
+from app.services.answer_cache import AnswerCache, CachedReply
+from app.services.answer_quality import answer_problems
 from app.services.chat_messages import ErrorCode, message
 from app.services.language import Language, detect_language
 
@@ -47,10 +51,17 @@ ARABIC_REMINDER = (
     '"وReact".'
 )
 
+# His email address (abdullahthweib…) sits in the context, so models drift to "Abdullah Thuweb".
+ENGLISH_REMINDER = 'Write his name exactly "Abdallah" or "Abdallah Thuieb".'
 # Answers are plain text: shown as subtitles now, spoken in step 7. Despite the prompt, models
 # occasionally emit markdown emphasis or code marks; drop those characters before they reach
 # the visitor. Removing them per character also handles "**" split across two tokens.
 _MARKDOWN_MARKERS = str.maketrans("", "", "*`")
+# Wait suggested to the visitor when a provider 429 names no Retry-After.
+DEFAULT_BUSY_SECONDS = 20
+# Cached answers are replayed in small pieces so they still "type in" like a live answer.
+_CACHED_PIECE = re.compile(r"\S+\s*")
+CACHED_WORDS_PER_TOKEN = 3
 
 
 def sse(event: str, data: dict[str, Any]) -> str:
@@ -69,9 +80,8 @@ def build_messages(
         f"{system_prompt}\n\n# Reply language\nReply in {LANGUAGE_NAMES[language]}. "
         "Start with the ACTIONS line."
     )
-    if language == "ar":
-        # The most-missed Arabic rules, repeated where the model reads them last.
-        system += " " + ARABIC_REMINDER
+    # The most-missed rules, repeated where the model reads them last.
+    system += " " + (ARABIC_REMINDER if language == "ar" else ENGLISH_REMINDER)
     messages: list[ChatMessage] = [{"role": "system", "content": system}]
     messages += [{"role": turn.role, "content": turn.content} for turn in request.history]
     messages.append({"role": "user", "content": request.message})
@@ -104,6 +114,27 @@ def reasoning_effort_for(language: Language, settings: Settings) -> str | None:
     return None  # the provider's default (LLM_REASONING_EFFORT)
 
 
+async def replay_cached(
+    reply: CachedReply, started: float, delay_seconds: float
+) -> AsyncIterator[str]:
+    """The same events as a live answer: `action`, `token`s, `done` (with `cached: true`)."""
+    yield sse("action", {"actions": reply.actions})
+    words = _CACHED_PIECE.findall(reply.text)
+    for index in range(0, len(words), CACHED_WORDS_PER_TOKEN):
+        if index and delay_seconds:
+            await asyncio.sleep(delay_seconds)
+        yield sse("token", {"text": "".join(words[index : index + CACHED_WORDS_PER_TOKEN])})
+    yield sse(
+        "done",
+        {
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "sources": reply.sources,
+            "cached": True,
+        },
+    )
+
+
 async def chat_events(
     request_id: str,
     request: ChatRequest,
@@ -113,9 +144,11 @@ async def chat_events(
     identity: str,
     settings: Settings,
     projects: Sequence[tuple[str, str]] = (),
+    cache: AnswerCache | None = None,
 ) -> AsyncIterator[str]:
     """`projects` = approved (project_id, title) pairs: the prompt's catalog and the only ids
-    a `show_project` action may use."""
+    a `show_project` action may use. `cache`: first-turn answers are served from / stored in
+    it (questions with history never are)."""
     language = detect_language(request.message, request.ui_language)
     project_ids = frozenset(project_id for project_id, _ in projects)
     action_types: list[str] = []
@@ -124,10 +157,28 @@ async def chat_events(
     model = provider.model if provider else "none"
     status = "ok"
 
-    def error(code: ErrorCode) -> str:
-        return sse("error", {"code": code, "message": message(code, request.ui_language)})
+    def error(code: ErrorCode, retry_after: int | None = None) -> str:
+        payload: dict[str, Any] = {"code": code, "message": message(code, request.ui_language)}
+        if retry_after is not None:
+            payload["retry_after"] = retry_after
+        return sse("error", payload)
 
     yield sse("start", {"request_id": request_id, "language": language})
+
+    # `is not None`: an empty cache is falsy (it has a length).
+    cache_key = (
+        cache.key_for(request.message, language)
+        if cache is not None and not request.history
+        else None
+    )
+    if cache is not None and cache_key and (cached := cache.get(cache_key)):
+        async for event in replay_cached(
+            cached, started, settings.answer_cache_stream_delay_ms / 1000
+        ):
+            yield event
+        action_types.extend(action["type"] for action in cached.actions)
+        _log(request_id, language, "cache", usage, started, "cached", action_types)
+        return
 
     if provider is None or retriever is None:
         status = "unavailable"
@@ -160,14 +211,18 @@ async def chat_events(
     pending: asyncio.Future | None = None
 
     answered = False
+    answer_parts: list[str] = []
+    dumped_actions: list[dict[str, Any]] = []
 
     def decision(result: PrefixResult) -> list[str]:
         actions = validate_actions(result.raw, project_ids)
         action_types.extend(action.type for action in actions)
+        dumped_actions.extend(dump_actions(actions))
         events = [sse("action", {"actions": dump_actions(actions)})]
         if result.text:
             nonlocal answered
             answered = True
+            answer_parts.append(result.text)
             events.append(sse("token", {"text": result.text}))
         return events
 
@@ -204,6 +259,7 @@ async def chat_events(
                         yield event
                 elif fed:
                     answered = True
+                    answer_parts.append(fed)
                     yield sse("token", {"text": fed})
             if chunk.usage:
                 usage, model = chunk.usage, chunk.model or model
@@ -216,20 +272,37 @@ async def chat_events(
             logger.warning("chat request_id=%s the model returned no answer text", request_id)
             yield error("unavailable")
             return
+        sources = sources_of(retrieval)
+        if (
+            cache is not None
+            and cache_key
+            and _cacheable(request_id, model, provider.model, answer_parts)
+        ):
+            cache.put(
+                cache_key,
+                CachedReply(
+                    text="".join(answer_parts),
+                    actions=dumped_actions,
+                    sources=sources,
+                    language=language,
+                    model=model,
+                ),
+            )
         yield sse(
             "done",
             {
                 "usage": {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens},
                 "latency_ms": round((time.perf_counter() - started) * 1000),
-                "sources": sources_of(retrieval),
+                "sources": sources,
             },
         )
     except (TimeoutError, LLMTimeoutError):
         status = "timeout"
         yield error("timeout")
-    except LLMRateLimitError:
+    except LLMRateLimitError as exc:
         status = "busy"
-        yield error("busy")
+        # The UI counts this down and re-enables the composer (Retry-After, else a default).
+        yield error("busy", math.ceil(exc.retry_after or DEFAULT_BUSY_SECONDS))
     except LLMError as exc:
         status = "unavailable"
         logger.warning("chat request_id=%s provider error: %s", request_id, exc)
@@ -249,6 +322,22 @@ async def chat_events(
                 await pending
         await stream.aclose()
         _log(request_id, language, model, usage, started, status, action_types)
+
+
+def _cacheable(request_id: str, model: str, primary: str, parts: list[str]) -> bool:
+    """A cached answer is replayed to everyone who asks the same first question, so only an
+    answer from the main model that passes every global rule check is stored."""
+    if model != primary:
+        logger.info("chat request_id=%s answer not cached: fallback model %s", request_id, model)
+        return False
+    if problems := answer_problems("".join(parts)):
+        # Rule names only (the answer is model output, but keep logs short and text-free).
+        kinds = sorted({problem.split(" ")[0] for problem in problems})
+        logger.warning(
+            "chat request_id=%s answer not cached: failed rule checks %s", request_id, kinds
+        )
+        return False
+    return True
 
 
 def _log(

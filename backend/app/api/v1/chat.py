@@ -3,9 +3,11 @@ import uuid
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.core.limits import log_rate_limit
 from app.models.chat import ChatRequest, RateLimitResponse
 from app.services.chat_messages import message
 from app.services.chat_service import chat_events
+from app.services.rate_limit import LIMIT_NAMES
 
 router = APIRouter(tags=["chat"])
 
@@ -28,6 +30,9 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse | JSONR
     decision = request.app.state.rate_limiter.check(_client_key(request))
     if not decision.allowed:
         assert decision.reason is not None
+        log_rate_limit(
+            "app", LIMIT_NAMES[decision.reason], route="chat", retry_after=decision.retry_after
+        )
         payload = RateLimitResponse(
             detail=message(decision.reason, body.ui_language), code=decision.reason
         )
@@ -45,6 +50,7 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse | JSONR
         identity=request.app.state.identity,
         settings=request.app.state.settings,
         projects=request.app.state.projects,
+        cache=request.app.state.answer_cache,
     )
     return StreamingResponse(
         events,

@@ -10,7 +10,6 @@ the main model is what gets evaluated.
 import argparse
 import asyncio
 import json
-import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -27,42 +26,13 @@ from app.models.chat import ChatRequest, ChatTurn
 from app.rag.identity import build_identity_context
 from app.rag.retriever import Retriever
 from app.rag.service import build_retriever
+from app.services.answer_quality import answer_problems, normalize
 from app.services.chat_service import build_messages, previous_user_message, reasoning_effort_for
 from app.services.knowledge_service import load_knowledge_service
 from app.services.language import detect_language
 
 CASES_FILE = Path(__file__).parent / "chat_cases.yaml"
 MAX_RATE_LIMIT_RETRIES = 6
-_DIACRITICS = re.compile(r"[\u064B-\u065F\u0670\u0640]")
-_HYPHENS = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2212]")
-_SPACES = re.compile(r"[\u00A0\u202F\u2009\u200A]")
-# Answers are shown as subtitles and spoken later: no markdown of any kind (prompt rule).
-_MARKDOWN = re.compile(
-    r"\*\*|__|```|^\s*#{1,6}\s|^\s*[-*•]\s|^\s*\d+\.\s|^\s*\|.*\|\s*$", re.MULTILINE
-)
-
-
-# Checks applied to EVERY answer (prompt v4 rules), on top of each case's own checks.
-# Praise/evaluation words the knowledge base never uses: the answer must state facts only.
-PRAISE_WORDS = [
-    "impressive", "deep understanding", "passionate", "passion for", "talented", "exceptional",
-    "outstanding", "remarkable", "brilliant", "highly skilled", "showcases his",
-    "شغف", "مبهر", "رائع", "متميز", "استثنائي", "موهوب", "مذهل", "فهم عميق", "عبقري",
-]  # fmt: skip
-# Known Arabic mistakes: the name must be the one word عبدالله; jussive of بُني is تُبنَ.
-ARABIC_MISTAKES = ["عبد الله", "لم تُبنى"]
-# A Latin letter directly touching an Arabic letter ("endorsه", "وReact", "بـMCP").
-# Arabic LETTERS only (incl. tatweel): Arabic punctuation such as "،" after an English word is fine.
-_AR_LETTER = "[\u0621-\u064a\u0671-\u06d3]"
-_GLUED = re.compile(f"{_AR_LETTER}[A-Za-z]|[A-Za-z]{_AR_LETTER}")
-_URL = re.compile(r"https?://|www\.")
-# Unfilled template text copied from a prompt ("<project name>", "<technology>").
-_PLACEHOLDER = re.compile(r"<[^<>]{2,40}>")
-
-
-def normalize(text: str) -> str:
-    text = _SPACES.sub(" ", _HYPHENS.sub("-", _DIACRITICS.sub("", text)))
-    return text.casefold().replace("’", "'")
 
 
 @dataclass
@@ -93,18 +63,9 @@ def check(case: dict, answer: str) -> list[str]:
     for needle in case.get("must_not_include") or []:
         if normalize(needle) in text:
             reasons.append(f"contains forbidden {needle!r}")
-    if _MARKDOWN.search(answer):
-        reasons.append("uses markdown")
-    reasons += [f"praise {word!r}" for word in PRAISE_WORDS if normalize(word) in text]
-    reasons += [f"Arabic mistake {m!r}" for m in ARABIC_MISTAKES if normalize(m) in text]
-    if glued := _GLUED.search(answer):
-        start = max(glued.start() - 6, 0)
-        reasons.append(f"Latin glued to Arabic {answer[start : glued.end() + 6]!r}")
-    if _URL.search(answer):
-        reasons.append("reads out a URL")
-    if placeholder := _PLACEHOLDER.search(answer):
-        reasons.append(f"template placeholder {placeholder.group()!r}")
-    return reasons
+    # Global rules (markdown, praise, Arabic mistakes, glued Latin, URLs, placeholders, the
+    # name's spelling): shared with the answer cache, which never stores a failing answer.
+    return reasons + answer_problems(answer)
 
 
 @dataclass
@@ -126,7 +87,7 @@ def build_context(settings) -> Context | None:
     projects = knowledge.list_projects()
     return Context(
         build_retriever(knowledge.documents, settings),
-        build_identity_context(knowledge.profile, knowledge.contact(), projects),
+        build_identity_context(knowledge.profile, knowledge.contact()),  # as in app/main.py
         [(project.id, project.title) for project in projects],
     )
 

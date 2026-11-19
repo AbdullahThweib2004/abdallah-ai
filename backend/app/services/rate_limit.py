@@ -13,6 +13,12 @@ from typing import Literal, Protocol
 DAY_SECONDS = 86_400
 
 Reason = Literal["rate_limited", "daily_limit", "daily_cap"]
+# How each reason appears in `rate_limit source=app limit=...` log lines.
+LIMIT_NAMES: dict[str, str] = {
+    "rate_limited": "per_ip_minute",
+    "daily_limit": "per_ip_day",
+    "daily_cap": "global_day",
+}
 
 
 @dataclass(frozen=True)
