@@ -11,6 +11,7 @@ import { type AnswerListener, useVoice } from "@/hooks/useVoice";
 import { busyMessage } from "@/lib/conversation/cooldown";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
 import { spaceArabicLatin } from "@/lib/text/spacing";
+import greetingManifest from "@/public/audio/greeting.json";
 import type { VoiceRepliesPreference } from "@/lib/voice/preferences";
 import type { UiAction } from "@/services/types";
 
@@ -29,6 +30,13 @@ type Props = CardData & {
   /** The speaker toggle as saved in its cookie (null: never chosen). */
   voiceReplies: VoiceRepliesPreference;
 };
+
+/**
+ * The greeting caption is the exact text of the static greeting audio (written next to it by
+ * backend/app/greeting.py), so what is shown always matches what is spoken, even when the
+ * content API is slow or down.
+ */
+const greetingTexts = { en: greetingManifest.en.text, ar: greetingManifest.ar.text };
 
 export function ConversationHome({ t, locale, profile, projects, contact, voiceReplies }: Props) {
   const answerListener = useRef<AnswerListener | null>(null);
@@ -49,7 +57,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
     replies: voice.replies,
     conversationStarted: lastUser !== undefined && lastUser !== null,
     language: locale,
-    texts: { en: profile?.intro.en ?? t.tagline, ar: profile?.intro.ar ?? t.tagline },
+    texts: greetingTexts,
     play: voice.playGreeting,
   });
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -110,7 +118,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
 
   function assistantText(message: Extract<Message, { role: "assistant" }>): string {
     if (message.kind === "greeting") {
-      return (locale === "ar" ? profile?.intro.ar : profile?.intro.en) ?? t.tagline;
+      return greetingTexts[locale];
     }
     const suffix = message.status === "stopped" ? ` (${t.conversation.stopped})` : "";
     return [spaceArabicLatin(message.text) + suffix, errorText(message)].filter(Boolean).join(" ") || "…";

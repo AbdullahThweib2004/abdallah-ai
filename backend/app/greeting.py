@@ -48,6 +48,7 @@ def wanted(settings: Settings) -> dict[str, dict[str, str]]:
         spoken = clean_for_speech(getattr(intro, language), language)  # as /voice/speak does
         voice = voice_for(settings, language)
         result[language] = {
+            "text": getattr(intro, language),  # shown with the audio (the caption)
             "spoken": spoken,
             "hash": greeting_hash(spoken, language, voice, settings.tts_model),
         }
@@ -89,20 +90,29 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = get_settings()
     stale = list(LANGUAGES) if args.force else stale_languages(settings)
-    if args.check:
-        print("Greeting audio up to date" if not stale else f"Stale greeting audio: {stale}")
-        return 1 if stale else 0
-    if not stale:
-        print("Greeting audio up to date; nothing to do (no ElevenLabs call).")
-        return 0
     targets = wanted(settings)
     manifest = read_manifest()
+    texts_stale = [
+        lang for lang in LANGUAGES if manifest.get(lang, {}).get("text") != targets[lang]["text"]
+    ]
+    if args.check:
+        problems = sorted(set(stale + texts_stale))
+        print("Greeting audio up to date" if not problems else f"Stale greeting: {problems}")
+        return 1 if problems else 0
+    # The caption text is always kept in sync (no ElevenLabs call needed for it).
+    for language in LANGUAGES:
+        manifest.setdefault(language, {})["text"] = targets[language]["text"]
+    if not stale:
+        MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", "utf-8")
+        print("Greeting audio up to date; caption texts synced (no ElevenLabs call).")
+        return 0
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     for language in stale:
         item = targets[language]
         audio = asyncio.run(synthesize(settings, item["spoken"], language))
         (AUDIO_DIR / f"greeting-{language}.mp3").write_bytes(audio)
         manifest[language] = {
+            "text": item["text"],
             "file": f"greeting-{language}.mp3",
             "hash": item["hash"],
             "voice": voice_for(settings, language),

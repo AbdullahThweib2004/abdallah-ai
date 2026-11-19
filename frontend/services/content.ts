@@ -13,7 +13,9 @@ const API_BASE_URL = (
   "http://localhost:8000"
 ).replace(/\/+$/, "");
 
-const TIMEOUT_MS = 5000;
+// Generous: the first request after a deploy cold-starts the Python function (bundle load +
+// startup), and a timeout here renders the page without content.
+const TIMEOUT_MS = 10_000;
 
 /**
  * Cached GET against the backend. Returns `null` for a 404 (a real answer, safe to cache).

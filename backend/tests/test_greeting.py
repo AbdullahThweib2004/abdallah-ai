@@ -16,6 +16,8 @@ def test_committed_greeting_files_match_the_intro_and_voice() -> None:
             f"greeting-{language}.mp3 is stale: run `uv run python -m app.greeting`"
         )
         assert (AUDIO_DIR / f"greeting-{language}.mp3").stat().st_size > 10_000
+        # The caption shown with the audio is the same intro the audio speaks.
+        assert manifest[language]["text"] == item["text"]
 
 
 def test_hash_changes_with_text_voice_and_model() -> None:

@@ -5,7 +5,8 @@
     "voice": "iP95p4xoKVk53GoZ742B",
     "model": "eleven_v4_turbo",
     "chars": 359,
-    "bytes": 180184
+    "bytes": 180184,
+    "text": "Hi, I'm the AI version of Abdallah Thuieb, an AI engineer from Palestine who builds AI you can actually trust: assistants that back every answer with a source, a platform that catches AI agents going rogue, and even a neural-network engine he wrote from scratch in C++. Ask me anything about his work, and every answer will come from what he has really built."
   },
   "ar": {
     "file": "greeting-ar.mp3",
@@ -13,6 +14,7 @@
     "voice": "iP95p4xoKVk53GoZ742B",
     "model": "eleven_v4_turbo",
     "chars": 298,
-    "bytes": 217382
+    "bytes": 217382,
+    "text": "أهلاً بك! أنا النسخة الذكية من عبدالله ذويب، مهندس ذكاء اصطناعي من فلسطين يبني أنظمة AI يمكنك أن تثق بها: مساعدين يدعمون كل إجابة بمصدرها، ومنصة تكشف وكلاء الذكاء الاصطناعي حين يخرجون عن السيطرة، وحتى محرك شبكات عصبية كتبه من الصفر بلغة C++. اسألني أي شيء عن أعماله، وكل إجابة ستكون مما بناه فعلاً."
   }
 }
