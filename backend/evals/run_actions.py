@@ -1,10 +1,11 @@
 """Action evals: does the model request the right card? (manual, real provider, costs tokens)
 
-    cd backend && uv run python -m evals.run_actions [--only ID ...] [--lang ar] [--show-answers]
+    cd backend && uv run python -m evals.run_actions [--model ID] [--only ID ...] [--limit N]
 
-Same path as the app (retrieval → prompt v5 → stream), then the app's own ACTIONS parser and
-allowlist. A case passes when the VALIDATED actions equal the expected set. Sequential, with
-backoff on 429 (see run_chat). The fallback model is off, so the main model is evaluated.
+Same path as the app (retrieval → system prompt → stream), then the app's own ACTIONS parser
+and allowlist. A case passes when the VALIDATED actions equal the expected set. Sequential and
+quota-safe like run_chat (evals/quota.py): default model = the fallback (20b), early stop on a
+daily limit or low remaining requests.
 """
 
 import argparse
@@ -19,6 +20,7 @@ from app.agents.actions import ActionPrefixParser, PrefixResult, dump_actions, s
 from app.core.config import get_settings
 from app.llm.factory import build_provider
 from app.services.language import detect_language
+from evals.quota import QuotaGuard, QuotaStop, add_quota_arguments, eval_settings, select_cases
 from evals.run_chat import ask_with_backoff, build_context
 
 CASES_FILE = Path(__file__).parent / "action_cases.yaml"
@@ -50,13 +52,13 @@ class Outcome:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", nargs="*", help="run only these case ids")
+    add_quota_arguments(parser)
     parser.add_argument("--lang", choices=["en", "ar"], help="run only cases in this language")
     parser.add_argument("--delay", type=float, default=2.0, help="seconds between cases")
     parser.add_argument("--show-answers", action="store_true", help="print every answer")
     args = parser.parse_args()
 
-    settings = get_settings().model_copy(update={"llm_fallback_model": None})
+    settings = eval_settings(get_settings(), args.model)
     if settings.llm_provider == "fake":
         print("LLM_PROVIDER=fake: evals need the real provider configured in .env", file=sys.stderr)
         return 2
@@ -69,20 +71,19 @@ async def main() -> int:
     cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
     for case in cases:
         case["language"] = detect_language(case["message"], "en")
-    if args.only:
-        cases = [case for case in cases if case["id"] in args.only]
-    if args.lang:
-        cases = [case for case in cases if case["language"] == args.lang]
+    cases = select_cases(cases, only=args.only, lang=args.lang, limit=args.limit)
+    guard = QuotaGuard(args.max_wait, args.reserve_requests)
 
     print(f"Provider {provider.name}, model {provider.model}, {len(cases)} cases\n", flush=True)
     outcomes: list[Outcome] = []
+    stopped: str | None = None
     try:
         for index, case in enumerate(cases):
             if index:
                 await asyncio.sleep(args.delay)
             accepted = [sorted(option) for option in case.get("accept") or [case["expect"]]]
             expected = " | ".join(", ".join(option) or "[]" for option in accepted)
-            reply = await ask_with_backoff(provider, context, case, settings)
+            reply = await ask_with_backoff(provider, context, case, settings, guard)
             if reply.error:
                 outcome = Outcome(
                     case["id"], case["language"], False, expected, "-", False, "", (0, 0),
@@ -101,6 +102,10 @@ async def main() -> int:
             print(f"  [{index + 1}/{len(cases)}] {status} {case['id']}", flush=True)
             if args.show_answers or not outcome.passed:
                 print(f"      got {outcome.got}; answer: {outcome.answer[:160]!r}", flush=True)
+            guard.check_remaining(provider)
+    except QuotaStop as stop:
+        stopped = f"STOPPED EARLY after {len(outcomes)}/{len(cases)} cases: {stop}"
+        print(f"\n{stopped}", flush=True)
     finally:
         await provider.aclose()
 
@@ -131,6 +136,9 @@ async def main() -> int:
             else ""
         )
     )
+    if stopped:
+        print(f"\n{stopped}")
+        return 3
     passed = sum(o.passed for o in outcomes)
     return 0 if passed / max(len(outcomes), 1) >= 0.9 else 1
 

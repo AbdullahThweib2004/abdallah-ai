@@ -1,10 +1,10 @@
 """Run the chat eval set against the REAL provider configured in `.env` (manual, not pytest).
 
-    cd backend && uv run python -m evals.run_chat [--only ID ...] [--allow-fallback]
+    cd backend && uv run python -m evals.run_chat [--model ID] [--only ID ...] [--limit N]
 
-Cases run sequentially. A 429 waits (Retry-After or exponential backoff) and retries, so
-the run survives Groq's free-tier rate limits. The fallback model is disabled by default so
-the main model is what gets evaluated.
+Quota-safe (see evals/quota.py): the default model is the FALLBACK (20b), the fallback is
+off so exactly that model is graded, per-minute 429s wait up to --max-wait, and a daily limit
+or a low remaining-requests count stops the run early with the results so far.
 """
 
 import argparse
@@ -30,6 +30,7 @@ from app.services.answer_quality import answer_problems, normalize
 from app.services.chat_service import build_messages, previous_user_message, reasoning_effort_for
 from app.services.knowledge_service import load_knowledge_service
 from app.services.language import detect_language
+from evals.quota import QuotaGuard, QuotaStop, add_quota_arguments, eval_settings, select_cases
 
 CASES_FILE = Path(__file__).parent / "chat_cases.yaml"
 MAX_RATE_LIMIT_RETRIES = 6
@@ -127,8 +128,12 @@ class Reply:
     error: str | None = None
 
 
-async def ask_with_backoff(provider: LLMProvider, context: Context, case: dict, settings) -> Reply:
-    """`ask` with retries: a 429 waits (Retry-After or exponential backoff) and tries again."""
+async def ask_with_backoff(
+    provider: LLMProvider, context: Context, case: dict, settings, guard: QuotaGuard | None = None
+) -> Reply:
+    """`ask` with retries: a per-minute 429 waits (Retry-After) and tries again; a daily limit
+    or a long wait raises `QuotaStop` (from the guard) instead of waiting for hours."""
+    guard = guard or QuotaGuard()
     for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
         started = time.perf_counter()
         try:
@@ -137,9 +142,9 @@ async def ask_with_backoff(provider: LLMProvider, context: Context, case: dict, 
                 timeout=settings.llm_timeout_seconds * 3,
             )
         except LLMRateLimitError as exc:
+            wait = guard.wait_for(exc, provider.model)
             if attempt == MAX_RATE_LIMIT_RETRIES:
                 return Reply(rate_limit_hits=attempt + 1, error="rate limited (gave up)")
-            wait = exc.retry_after or min(60, 5 * 2**attempt)
             print(f"    429 on {case['id']}: waiting {wait:.0f}s (retry {attempt + 1})", flush=True)
             await asyncio.sleep(wait)
             continue
@@ -150,8 +155,10 @@ async def ask_with_backoff(provider: LLMProvider, context: Context, case: dict, 
     raise AssertionError("unreachable")
 
 
-async def run_case(provider: LLMProvider, context: Context, case: dict, settings) -> Result:
-    reply = await ask_with_backoff(provider, context, case, settings)
+async def run_case(
+    provider: LLMProvider, context: Context, case: dict, settings, guard: QuotaGuard
+) -> Result:
+    reply = await ask_with_backoff(provider, context, case, settings, guard)
     if reply.error:
         return Result(case["id"], False, [reply.error], rate_limit_hits=reply.rate_limit_hits)
     # Grade the answer the visitor sees: the model's raw text minus the ACTIONS line (which
@@ -183,8 +190,7 @@ def print_table(results: list[Result]) -> None:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", nargs="*", help="run only these case ids")
-    parser.add_argument("--allow-fallback", action="store_true", help="keep LLM_FALLBACK_MODEL on")
+    add_quota_arguments(parser)
     parser.add_argument("--delay", type=float, default=2.0, help="seconds between cases")
     parser.add_argument("--show-answers", action="store_true", help="print every answer")
     parser.add_argument("--lang", choices=["en", "ar"], help="run only cases in this language")
@@ -196,9 +202,7 @@ async def main() -> int:
     parser.add_argument("--json", type=Path, help="also write results (with answers) to this file")
     args = parser.parse_args()
 
-    settings = get_settings()
-    if not args.allow_fallback:
-        settings = settings.model_copy(update={"llm_fallback_model": None})
+    settings = eval_settings(get_settings(), args.model)
     if args.reasoning_effort_ar:
         settings = settings.model_copy(update={"llm_reasoning_effort_ar": args.reasoning_effort_ar})
     if settings.llm_provider == "fake":
@@ -211,11 +215,13 @@ async def main() -> int:
         return 2
     provider = build_provider(settings)
 
-    cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
-    if args.only:
-        cases = [case for case in cases if case["id"] in args.only]
-    if args.lang:
-        cases = [case for case in cases if case.get("language", "en") == args.lang]
+    cases = select_cases(
+        yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"],
+        only=args.only,
+        lang=args.lang,
+        limit=args.limit,
+    )
+    guard = QuotaGuard(args.max_wait, args.reserve_requests)
 
     print(
         f"Provider {provider.name}, model {provider.model}, {len(cases)} cases, retrieval "
@@ -225,16 +231,21 @@ async def main() -> int:
         flush=True,
     )
     results: list[Result] = []
+    stopped: str | None = None
     try:
         for index, case in enumerate(cases):
             if index:
                 await asyncio.sleep(args.delay)
-            result = await run_case(provider, context, case, settings)
+            result = await run_case(provider, context, case, settings, guard)
             results.append(result)
             status = "PASS" if result.passed else "FAIL"
             print(f"  [{index + 1}/{len(cases)}] {status} {case['id']}", flush=True)
             if args.show_answers or not result.passed:
                 print(f"      answer: {result.answer!r}", flush=True)
+            guard.check_remaining(provider)
+    except QuotaStop as stop:
+        stopped = f"STOPPED EARLY after {len(results)}/{len(cases)} cases: {stop}"
+        print(f"\n{stopped}", flush=True)
     finally:
         await provider.aclose()
 
@@ -285,6 +296,9 @@ async def main() -> int:
             else "  (set LLM_INPUT_COST_PER_MTOK / LLM_OUTPUT_COST_PER_MTOK for a real estimate)"
         )
     )
+    if stopped:
+        print(f"\n{stopped}")
+        return 3
     return 0 if passed / max(len(results), 1) >= 0.9 else 1
 
 
