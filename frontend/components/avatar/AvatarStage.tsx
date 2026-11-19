@@ -6,6 +6,7 @@ import { Component, type ReactNode, useCallback, useEffect, useReducer, useRef, 
 import type { AvatarState } from "@/hooks/useConversation";
 import { type CardSide, cardSideFor } from "@/lib/avatar/motion";
 import { initialRobotStatus, mountsRobot, robotReducer, showsOrb } from "@/lib/avatar/recovery";
+import { isSoftwareRenderer } from "@/lib/avatar/renderer";
 
 const WAVE_BARS = [0.45, 0.8, 0.6, 1, 0.7, 0.9, 0.5, 0.75, 0.4];
 
@@ -45,13 +46,17 @@ function useMedia(query: string, serverValue: boolean): boolean {
   );
 }
 
+/** WebGL with GPU acceleration (software rendering counts as unavailable). */
 function webglAvailable(): boolean {
   try {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
     if (!context) return false;
+    // Software WebGL (no GPU) would block the main thread for seconds: show the orb instead.
+    const info = context.getExtension("WEBGL_debug_renderer_info");
+    const renderer = info ? context.getParameter(info.UNMASKED_RENDERER_WEBGL) : context.getParameter(context.RENDERER);
     context.getExtension("WEBGL_lose_context")?.loseContext();
-    return true;
+    return !isSoftwareRenderer(typeof renderer === "string" ? renderer : null);
   } catch {
     return false;
   }
