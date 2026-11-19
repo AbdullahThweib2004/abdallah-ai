@@ -353,3 +353,39 @@ body {
     transform: none;
   }
 }
+
+/* ---------------------------------------------------------------- spoken transcript */
+
+/* Words of an entry: dimmed until spoken (mist-400 on ink-850 ≈ 6.7:1, still readable), bright
+   once spoken, the word being spoken glows amber. `data-mode="bright"`: not voiced, all bright. */
+.transcript-text .tw {
+  color: var(--color-mist-400);
+}
+.transcript-text .tw[data-state="spoken"],
+.transcript-text[data-mode="bright"] .tw {
+  color: var(--color-mist-50);
+}
+.transcript-text[data-mode="bright"] .tw {
+  text-shadow: none;
+}
+.transcript-text .tw[data-state="current"] {
+  color: var(--color-mist-50);
+  text-shadow:
+    0 0 14px color-mix(in oklab, var(--color-accent) 70%, transparent),
+    0 0 2px color-mix(in oklab, var(--color-accent) 45%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .transcript-text .tw {
+    transition:
+      color 220ms ease-out,
+      text-shadow 260ms ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transcript-text .tw[data-state="current"] {
+    text-shadow: none;
+  }
+}
+.transcript-panel {
+  background: color-mix(in oklab, var(--color-ink-850) 92%, transparent);
+}

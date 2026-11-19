@@ -130,6 +130,10 @@ export class Speaker {
     this.serverVoice = mode === "server";
     this.audio = typeof Audio === "undefined" ? null : new Audio();
     if (this.audio) {
+      // In the page (hidden) so its playback state can be inspected; no visible controls.
+      this.audio.hidden = true;
+      this.audio.dataset.voice = "speaker";
+      if (typeof document !== "undefined") document.body.appendChild(this.audio);
       this.audio.preload = "auto";
       this.audio.addEventListener("playing", () => this.onPlaying());
       this.audio.addEventListener("ended", () => this.finishCurrent());
@@ -222,6 +226,14 @@ export class Speaker {
     return this.current === item ? "playing" : "failed";
   }
 
+  /** Character timing that arrived after the greeting started playing. */
+  attachGreetingAlignment(alignment: Alignment): void {
+    const item = this.current;
+    if (!item?.clip || item.alignment.chars.length) return;
+    item.alignment = alignment;
+    item.timed = null;
+  }
+
   /** Drop the greeting clip without calling its end callback (a retry follows). */
   private resetClip(): void {
     this.clipEnded = null;
@@ -296,6 +308,7 @@ export class Speaker {
 
   dispose(): void {
     this.stop();
+    this.audio?.remove();
     void this.context?.close();
     this.context = null;
   }

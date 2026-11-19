@@ -4,25 +4,23 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AvatarStage } from "@/components/avatar/AvatarStage";
-import { type AnswerMessage, type AvatarState, type Message, sameCard, useConversation } from "@/hooks/useConversation";
+import { type AnswerMessage, type AvatarState, sameCard, useConversation } from "@/hooks/useConversation";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useGreeting } from "@/hooks/useGreeting";
 import { type AnswerListener, useVoice } from "@/hooks/useVoice";
 import { busyMessage } from "@/lib/conversation/cooldown";
-import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
-import { spaceArabicLatin } from "@/lib/text/spacing";
+import { type Dictionary, type Locale } from "@/lib/i18n/config";
 import greetingManifest from "@/public/audio/greeting.json";
 import type { VoiceRepliesPreference } from "@/lib/voice/preferences";
+import type { VoiceRecord } from "@/lib/voice/transcript";
 import type { UiAction } from "@/services/types";
 
-import { AnswerSubtitle } from "./AnswerSubtitle";
 import { CardBody, type CardData } from "./CardBody";
 import { CardPanel } from "./CardPanel";
 import { Composer } from "./Composer";
 import { deepLinkFromParams } from "./deepLink";
-import { Subtitle } from "./Subtitle";
 import { SuggestionChips } from "./SuggestionChips";
-import { Transcript } from "./Transcript";
+import { type TranscriptEntry, TranscriptPanel } from "./TranscriptPanel";
 
 type Props = CardData & {
   t: Dictionary;
@@ -42,7 +40,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
   const answerListener = useRef<AnswerListener | null>(null);
   const conversation = useConversation(projects ?? [], locale, answerListener);
   const { card, cards, messages, lastAssistant, lastUser, streaming } = conversation;
-  const { send, stop, showCard, closeCard, spoken } = conversation;
+  const { send, stop, showCard, closeCard } = conversation;
   const voice = useVoice({
     initialReplies: voiceReplies,
     onTranscript: (text) => void send(text),
@@ -59,8 +57,9 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
     language: locale,
     texts: greetingTexts,
     play: voice.playGreeting,
+    attach: voice.attachGreetingAlignment,
   });
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -93,15 +92,15 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
   }, [card]);
 
   useEffect(() => {
-    if (!card && !historyOpen) return;
+    if (!card && !sheetOpen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (historyOpen) setHistoryOpen(false);
+      if (sheetOpen) setSheetOpen(false);
       else closeCard();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [card, historyOpen, closeCard]);
+  }, [card, sheetOpen, closeCard]);
 
   // A provider rate limit on the latest answer: count down, keep the composer disabled meanwhile.
   const waitSeconds = useCountdown(conversation.busyUntil);
@@ -114,14 +113,6 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
       return seconds > 0 ? busyMessage(t.conversation.errors.busy, locale, seconds) : t.conversation.errors.busyOver;
     }
     return answer.error.kind === "network" ? t.conversation.errors.network : t.conversation.errors.generic;
-  }
-
-  function assistantText(message: Extract<Message, { role: "assistant" }>): string {
-    if (message.kind === "greeting") {
-      return greetingTexts[locale];
-    }
-    const suffix = message.status === "stopped" ? ` (${t.conversation.stopped})` : "";
-    return [spaceArabicLatin(message.text) + suffix, errorText(message)].filter(Boolean).join(" ") || "…";
   }
 
   /** Typed and voice questions alike; a click/keypress also unlocks audio playback. */
@@ -158,15 +149,63 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
   // On mobile the card is a bottom sheet; everything except the avatar sits underneath it.
   const underSheet = cardOpen ? "max-lg:hidden" : "";
 
+  // The transcript: the greeting first, then every answer under its question. Each entry's
+  // record says what the voice did with it (live / done / stopped; none = not voiced: bright).
+  const greetingVoice = voice.records.greeting;
+  const greetingRecord: VoiceRecord | undefined =
+    greetingVoice?.state === "live" || greetingVoice?.state === "stopped"
+      ? greetingVoice
+      : !voice.replies || greeting.phase === "done"
+        ? undefined
+        : { state: "pending" }; // waiting to be spoken: dimmed, still readable
+  const entries: TranscriptEntry[] = [
+    { kind: "greeting", key: "greeting", text: greetingTexts[locale], lang: locale, rtl: locale === "ar", record: greetingRecord },
+  ];
+  let question = "";
+  for (const message of messages) {
+    if (message.role === "user") question = message.text;
+    else if (message.kind === "answer") {
+      const language = message.language ?? locale;
+      entries.push({
+        kind: "answer",
+        key: `answer:${message.id}`,
+        question,
+        answer: message,
+        lang: language,
+        rtl: language === "ar",
+        record: voice.records[`answer:${message.id}`],
+        errorText: errorText(message),
+      });
+    }
+  }
+  // Screen readers get each finished answer once, as a whole.
+  const lastFinished = messages.findLast(
+    (message): message is AnswerMessage => message.role === "assistant" && message.kind === "answer" && message.status !== "streaming",
+  );
+  const announcement = lastFinished
+    ? [lastFinished.text, lastFinished.status === "stopped" ? `(${t.conversation.stopped})` : "", errorText(lastFinished) ?? ""]
+        .filter(Boolean)
+        .join(" ")
+    : "";
+
   return (
     <div
-      className="relative h-[calc(100dvh-var(--header-height))] overflow-hidden"
-      style={{ ["--panel-width" as string]: "min(42vw, 540px)" }}
+      className="relative flex h-[calc(100dvh-var(--header-height))] overflow-hidden"
+      style={{
+        ["--panel-width" as string]: "min(36vw, 500px)",
+        ["--transcript-width" as string]: "clamp(17rem, 25vw, 22.5rem)",
+      }}
     >
+      {/* Desktop / tablet: the transcript on the start side (left in English, right in Arabic),
+          opposite the card panel. */}
+      <div className="hidden w-[var(--transcript-width)] shrink-0 py-4 ps-4 min-[769px]:block">
+        <TranscriptPanel t={t} entries={entries} progress={voice.progress} variant="panel" />
+      </div>
+
       <section
         aria-label={t.conversation.regionLabel}
         aria-busy={streaming}
-        className={`stage-shift flex h-full flex-col ${cardOpen ? "max-lg:pb-[58dvh] lg:pe-[calc(var(--panel-width)+2rem)]" : ""}`}
+        className={`stage-shift flex h-full min-w-0 flex-1 flex-col ${cardOpen ? "max-lg:pb-[58dvh] lg:pe-[calc(var(--panel-width)+2rem)]" : ""}`}
       >
         <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6">
           <div className="avatar-frame relative grid min-h-0 flex-1 place-items-center">
@@ -196,24 +235,17 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
             )}
           </div>
 
-          <div className={`shrink-0 space-y-4 pt-4 ${underSheet}`}>
-            {lastAssistant?.role === "assistant" && lastAssistant.kind === "greeting" && (
-              <Subtitle
-                key={`greeting-${locale}-${greeting.plays}`}
-                text={assistantText(lastAssistant)}
-                lang={locale}
-                dir={directionOf(locale)}
-                onDone={spoken}
-              />
-            )}
-            {lastAssistant?.role === "assistant" && lastAssistant.kind === "answer" && (
-              <AnswerSubtitle
-                answer={lastAssistant}
-                errorText={errorText(lastAssistant)}
+          <div className={`shrink-0 space-y-3 pt-3 ${underSheet}`}>
+            {/* Phones: the current entry under the robot; the full transcript opens as a sheet. */}
+            <div className="mt-2 min-[769px]:hidden">
+              <TranscriptPanel
                 t={t}
-                fallbackLang={locale}
+                entries={entries}
+                progress={voice.progress}
+                variant="compact"
+                onOpenSheet={() => setSheetOpen(true)}
               />
-            )}
+            </div>
 
             {!lastUser && (
               <SuggestionChips
@@ -222,16 +254,6 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
                 onPick={ask}
               />
             )}
-
-            <Transcript
-              t={t}
-              messages={messages}
-              lastUser={lastUser}
-              assistantText={assistantText}
-              open={historyOpen}
-              onToggle={() => setHistoryOpen((value) => !value)}
-              rtl={locale === "ar"}
-            />
 
             <Composer
               t={t}
@@ -256,6 +278,22 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
           </div>
         </div>
       </section>
+
+      {sheetOpen && (
+        <div className="min-[769px]:hidden">
+          <TranscriptPanel
+            t={t}
+            entries={entries}
+            progress={voice.progress}
+            variant="sheet"
+            onClose={() => setSheetOpen(false)}
+          />
+        </div>
+      )}
+
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
 
       {card && (
         <CardPanel

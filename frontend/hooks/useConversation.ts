@@ -125,7 +125,7 @@ function reducer(state: State, event: Event): State {
 
 const INITIAL: State = {
   messages: [{ id: 0, role: "assistant", kind: "greeting" }],
-  avatar: "speaking", // the greeting "speaks" while its subtitle types in
+  avatar: "idle", // the greeting speaks through its audio (voice state), not a typed subtitle
   card: null,
   cards: [],
 };

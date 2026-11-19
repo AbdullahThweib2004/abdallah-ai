@@ -246,6 +246,11 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
     [],
   );
 
+  const attachGreetingAlignment = useCallback(
+    (alignment: Alignment) => speaker.current?.attachGreetingAlignment(alignment),
+    [],
+  );
+
   /** Word timing of whatever is being voiced now (read every animation frame). */
   const progress = useCallback(() => speaker.current?.progress() ?? null, []);
 
@@ -267,6 +272,7 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
     ready: config !== null,
     records,
     progress,
+    attachGreetingAlignment,
     playGreeting,
     listener,
     levels,

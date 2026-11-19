@@ -32,6 +32,8 @@ type Options = {
     onEnd: () => void,
     alignment: Alignment | null,
   ) => Promise<PlayResult>;
+  /** Timing that arrived after the greeting started playing. */
+  attach: (alignment: Alignment) => void;
 };
 
 function storage(): Storage | null {
@@ -47,39 +49,55 @@ function storage(): Storage | null {
  * lib/voice/greeting.ts). Returns the phase, the number of times it started playing (the
  * caption retypes in sync) and `sayHi` for the "Say hi" button.
  */
-export function useGreeting({ ready, replies, conversationStarted, language, texts, play }: Options) {
+export function useGreeting({ ready, replies, conversationStarted, language, texts, play, attach }: Options) {
   const [state, dispatch] = useReducer(greetingReducer, initialGreeting);
   const [plays, setPlays] = useState(0);
-  const latest = useRef({ language, texts, play });
+  const latest = useRef({ language, texts, play, attach });
   // Character timestamps of the static greeting clips (greeting-{en,ar}.json), for the
   // word-by-word highlighting. Small files, fetched once; until then timing is proportional.
-  const alignments = useRef<Partial<Record<ChatLanguage, Alignment>>>({});
-  useEffect(() => {
-    for (const lang of ["en", "ar"] as const) {
-      fetch(`/audio/greeting-${lang}.json`)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data: { alignment?: Alignment } | null) => {
-          if (data?.alignment) alignments.current[lang] = data.alignment;
-        })
-        .catch(() => undefined);
-    }
+  const alignments = useRef<Partial<Record<ChatLanguage, Promise<Alignment | null>>>>({});
+  const loaded = useRef<Partial<Record<ChatLanguage, Alignment>>>({});
+  const loadAlignment = useCallback((lang: ChatLanguage) => {
+    alignments.current[lang] ??= fetch(`/audio/greeting-${lang}.json`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { alignment?: Alignment } | null) => {
+        if (data?.alignment) loaded.current[lang] = data.alignment;
+        return data?.alignment ?? null;
+      })
+      .catch(() => null);
+    return alignments.current[lang];
   }, []);
   useEffect(() => {
-    latest.current = { language, texts, play };
+    void loadAlignment("en");
+    void loadAlignment("ar");
+  }, [loadAlignment]);
+  useEffect(() => {
+    latest.current = { language, texts, play, attach };
   });
 
   const attempt = useCallback((viaGesture: boolean) => {
-    const { language: lang, texts: all, play: start } = latest.current;
+    const { language: lang, texts: all, play: start, attach } = latest.current;
     // The language at play time: a switch before the first play changes the greeting.
-    const timing = alignments.current[lang] ?? null;
-    void start(greetingUrl(lang), all[lang], lang, viaGesture, () => dispatch({ type: "ended" }), timing).then((result) => {
-      if (result === "playing") {
-        storage()?.setItem(GREETING_PLAYED_KEY, "1");
-        setPlays((count) => count + 1);
-      }
-      dispatch({ type: "result", result });
-    });
-  }, []);
+    const pending = loadAlignment(lang);
+    const run = (timing: Alignment | null) =>
+      start(greetingUrl(lang), all[lang], lang, viaGesture, () => dispatch({ type: "ended" }), timing).then((result) => {
+        if (result === "playing") {
+          storage()?.setItem(GREETING_PLAYED_KEY, "1");
+          setPlays((count) => count + 1);
+        }
+        dispatch({ type: "result", result });
+      });
+    if (viaGesture) {
+      // Inside a gesture play() must start at once (Safari): use the timing if it is already
+      // here, else attach it when it arrives.
+      const timing = loaded.current[lang] ?? null;
+      if (!timing) void pending.then((late) => late && attach(late));
+      void run(timing);
+    } else {
+      // Autoplay can wait for the small, local timing file.
+      void pending.then(run);
+    }
+  }, [loadAlignment]);
 
   // Decide once the speaker exists: muted, already played this visit, or try autoplay.
   useEffect(() => {
