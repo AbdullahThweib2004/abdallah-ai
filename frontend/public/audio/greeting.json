@@ -1,0 +1,18 @@
+{
+  "en": {
+    "file": "greeting-en.mp3",
+    "hash": "b9caf8bc94ab8cca882cc8ed1569c84a13c02ca18830c7176867e781ce1122c8",
+    "voice": "iP95p4xoKVk53GoZ742B",
+    "model": "eleven_v4_turbo",
+    "chars": 359,
+    "bytes": 180184
+  },
+  "ar": {
+    "file": "greeting-ar.mp3",
+    "hash": "8ca85017b285425ba33714876752745295ae5926d05ed69967f10a39fcaebfab",
+    "voice": "iP95p4xoKVk53GoZ742B",
+    "model": "eleven_v4_turbo",
+    "chars": 298,
+    "bytes": 217382
+  }
+}

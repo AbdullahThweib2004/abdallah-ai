@@ -41,6 +41,8 @@ type Item = {
   failed: boolean;
   started: boolean;
   listeners: Set<() => void>;
+  /** A static clip (the greeting), not part of an answer: never marks the composer busy. */
+  clip?: boolean;
 };
 
 type Answer = {
@@ -79,6 +81,8 @@ export class Speaker {
   private serverVoice: boolean;
   private speaking = false;
   private browserVoice = false;
+  private clipEnded: (() => void) | null = null;
+  private clipToken = 0;
 
   constructor(
     mode: VoiceMode,
@@ -118,6 +122,81 @@ export class Speaker {
     return this.speaking && !this.browserVoice && this.meter ? this.meter.bars() : null;
   }
 
+  /**
+   * Play a static clip (the greeting) through the same element and analyser as answers, so the
+   * avatar follows its real level. `viaGesture`: called inside a user gesture (may unlock audio
+   * and use the browser voice if the file fails). Without a gesture this is the autoplay
+   * attempt: "blocked" when the browser refuses sound. `onEnd` runs once, when it finishes or
+   * is stopped (Stop, a new answer, mute).
+   */
+  async playGreeting(
+    url: string,
+    text: string,
+    language: ChatLanguage,
+    viaGesture: boolean,
+    onEnd: () => void,
+  ): Promise<"playing" | "blocked" | "failed"> {
+    const audio = this.audio;
+    if (!audio) return "failed";
+    this.stop();
+    const token = ++this.clipToken;
+    if (viaGesture) this.unlock();
+    const item: Item = {
+      text, language, chunks: [], done: true, failed: false, started: true, listeners: new Set(), clip: true,
+    };
+    this.current = item;
+    this.clipEnded = onEnd;
+    audio.src = url;
+    try {
+      await audio.play();
+    } catch (error) {
+      // Replaced meanwhile (Stop, a new answer). A load error may already have cleared
+      // `current` through the element's error event, so compare the call, not the item.
+      if (token !== this.clipToken || this.answer) return "failed";
+      const blocked = error instanceof DOMException && error.name === "NotAllowedError";
+      this.resetClip();
+      if (blocked) return "blocked";
+      if (!viaGesture) return "blocked"; // the browser-voice fallback needs a gesture too
+      console.info("[voice] greeting file unavailable; using the browser voice", error);
+      this.current = item;
+      this.clipEnded = onEnd;
+      this.speakWithBrowser(item);
+      return this.current === item ? "playing" : "failed";
+    }
+    if (!viaGesture) {
+      // Autoplay allowed: route it through the analyser for real levels. If the audio graph
+      // cannot run without a gesture, the element would be silent: treat as blocked.
+      this.unlock();
+      if (this.context && this.context.state !== "running") {
+        await Promise.race([this.context.resume(), new Promise((resolve) => setTimeout(resolve, 300))]);
+      }
+      if (this.context && this.context.state !== "running") {
+        this.resetClip();
+        return "blocked";
+      }
+    }
+    return this.current === item ? "playing" : "failed";
+  }
+
+  /** Drop the greeting clip without calling its end callback (a retry follows). */
+  private resetClip(): void {
+    this.clipEnded = null;
+    this.current = null;
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.removeAttribute("src");
+      this.audio.load();
+    }
+    this.speaking = false;
+    this.emit();
+  }
+
+  private endClip(): void {
+    const ended = this.clipEnded;
+    this.clipEnded = null;
+    ended?.();
+  }
+
   begin(language: ChatLanguage): void {
     this.stop();
     this.answer = {
@@ -146,6 +225,8 @@ export class Speaker {
 
   /** Stop all speech now (Stop button, barge-in, new question). */
   stop(): void {
+    this.clipToken++; // a greeting attempt in progress is cancelled too
+    if (this.current?.clip) this.endClip();
     this.answer?.abort.abort();
     this.answer = null;
     this.queue = [];
@@ -269,6 +350,7 @@ export class Speaker {
 
   private finishCurrent(): void {
     if (!this.current) return;
+    if (this.current.clip) this.endClip();
     this.current = null;
     this.revoke();
     this.speaking = false;
@@ -364,6 +446,7 @@ export class Speaker {
 
   /** Nothing can be spoken for this answer (no voice on this device): captions only. */
   private dropAnswer(): void {
+    if (this.current?.clip) this.endClip();
     this.answer?.abort.abort();
     this.answer = null;
     this.queue = [];
@@ -389,7 +472,7 @@ export class Speaker {
   private emit(): void {
     this.callbacks.onState({
       speaking: this.speaking,
-      active: this.answer !== null || this.current !== null,
+      active: this.answer !== null || (this.current !== null && !this.current.clip),
     });
   }
 }

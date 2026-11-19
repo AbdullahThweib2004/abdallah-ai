@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AvatarStage } from "@/components/avatar/AvatarStage";
 import { type AnswerMessage, type AvatarState, type Message, sameCard, useConversation } from "@/hooks/useConversation";
 import { useCountdown } from "@/hooks/useCountdown";
+import { useGreeting } from "@/hooks/useGreeting";
 import { type AnswerListener, useVoice } from "@/hooks/useVoice";
 import { busyMessage } from "@/lib/conversation/cooldown";
 import { type Dictionary, type Locale, directionOf } from "@/lib/i18n/config";
@@ -42,6 +43,15 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
   useEffect(() => {
     answerListener.current = voice.listener;
   }, [voice.listener]);
+  // The spoken greeting: static audio, autoplay or first gesture (see hooks/useGreeting.ts).
+  const greeting = useGreeting({
+    ready: voice.ready,
+    replies: voice.replies,
+    conversationStarted: lastUser !== undefined && lastUser !== null,
+    language: locale,
+    texts: { en: profile?.intro.en ?? t.tagline, ar: profile?.intro.ar ?? t.tagline },
+    play: voice.playGreeting,
+  });
   const [historyOpen, setHistoryOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -151,7 +161,7 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
         className={`stage-shift flex h-full flex-col ${cardOpen ? "max-lg:pb-[58dvh] lg:pe-[calc(var(--panel-width)+2rem)]" : ""}`}
       >
         <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6">
-          <div className="avatar-frame grid min-h-0 flex-1 place-items-center">
+          <div className="avatar-frame relative grid min-h-0 flex-1 place-items-center">
             <AvatarStage
               state={avatar}
               label={`${t.avatar.label}: ${t.avatar.states[avatar]}`}
@@ -159,12 +169,29 @@ export function ConversationHome({ t, locale, profile, projects, contact, voiceR
               cardOpen={cardOpen}
               rtl={locale === "ar"}
             />
+            {greeting.phase === "waiting" && (
+              <button
+                type="button"
+                onClick={greeting.sayHi}
+                data-greeting-ignore
+                aria-label={t.voice.sayHiLabel}
+                className="absolute bottom-1 start-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-accent/40 bg-ink-900/85 py-1.5 ps-1.5 pe-4 text-sm font-medium text-mist-50 shadow-[0_10px_40px_-12px_rgba(245,166,35,0.45)] backdrop-blur transition-colors hover:border-accent hover:bg-ink-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rtl:translate-x-1/2"
+              >
+                <span aria-hidden="true" className="relative grid size-7 place-items-center rounded-full bg-accent text-accent-ink">
+                  <span className="absolute inset-0 rounded-full bg-accent/50 motion-safe:animate-ping" />
+                  <svg viewBox="0 0 16 16" className="relative size-3.5" fill="currentColor">
+                    <path d="M4.5 2.8v10.4c0 .6.7 1 1.2.6l7.6-5.2a.7.7 0 0 0 0-1.2L5.7 2.2c-.5-.4-1.2 0-1.2.6Z" />
+                  </svg>
+                </span>
+                <span lang={locale}>{t.voice.sayHi}</span>
+              </button>
+            )}
           </div>
 
           <div className={`shrink-0 space-y-4 pt-4 ${underSheet}`}>
             {lastAssistant?.role === "assistant" && lastAssistant.kind === "greeting" && (
               <Subtitle
-                key={`greeting-${locale}`}
+                key={`greeting-${locale}-${greeting.plays}`}
                 text={assistantText(lastAssistant)}
                 lang={locale}
                 dir={directionOf(locale)}

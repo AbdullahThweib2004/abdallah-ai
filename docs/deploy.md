@@ -1,6 +1,6 @@
 # Deploying Abdallah AI
 
-Live: **https://abdallah-ai-three.vercel.app**
+Live: **https://abdallah-thuieb.vercel.app**
 
 The whole site runs on Vercel's free Hobby plan as **one project with two services**
 (`vercel.json`):
@@ -48,6 +48,10 @@ The function bundle is about 295 MB (the limit is 500 MB).
 2. Check it locally:
    - `cd backend && uv run python -m app.knowledge.cli validate`
    - `uv run python -m evals.run_retrieval`: keep Recall@6 at 1.0 in EN and AR.
+   - If you edited the "Short self-introduction" in `profile/about.md`, regenerate the spoken
+     greeting: `uv run python -m app.greeting`. This calls ElevenLabs once per changed language,
+     about 300–360 characters each, and rewrites `frontend/public/audio/greeting-{en,ar}.mp3`
+     and `greeting.json`. `tests/test_greeting.py` fails until you do.
 3. Commit and push to `main`.
 
 Vercel rebuilds the index in the build step. The answer cache is keyed by a hash of the
@@ -66,7 +70,7 @@ Changes apply to the **next** deployment, so redeploy afterwards.
 | Variable | Value / note |
 |---|---|
 | `APP_ENV` | `production`: production per-IP limits, API docs hidden |
-| `CORS_ORIGINS` | `https://abdallah-ai-three.vercel.app` (same-origin calls don't need it, other sites are refused) |
+| `CORS_ORIGINS` | `https://abdallah-thuieb.vercel.app` (same-origin calls don't need it, other sites are refused) |
 | `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_FALLBACK_MODEL`, `LLM_REASONING_EFFORT` | Groq `openai/gpt-oss-120b`, fallback `openai/gpt-oss-20b` |
 | `LLM_API_KEY` | Groq key (**Secret**). Also used for Whisper. |
 | `STT_PROVIDER`, `STT_MODEL` | `groq`, `whisper-large-v3` |
@@ -114,7 +118,7 @@ Provider dashboards and limits:
 | **Vercel** | Project, then Usage | The free Hobby allotment is 1M function invocations, 4 h Active CPU and 360 GB-hrs memory per month. Waiting for Groq or ElevenLabs is I/O and doesn't count as Active CPU. |
 | **Upstash** | Vercel Storage tab, or the Upstash console | The free plan has a monthly command allowance. The site uses about 1 command per rate check and 1–3 per chat (cache), so about 3–5 per question. |
 
-Logs: `npx vercel logs --deployment https://abdallah-ai-three.vercel.app`. Hobby keeps
+Logs: `npx vercel logs --deployment https://abdallah-thuieb.vercel.app`. Hobby keeps
 runtime logs for 1 hour. Every 429 is one `rate_limit source=… limit=…` line, and logs never
 contain visitor messages, transcripts or IP addresses.
 
@@ -123,8 +127,8 @@ contain visitor messages, transcripts or IP addresses.
 ```bash
 cd backend
 # Evals against the deployed API: real routing, cache and limits. Mind the per-IP limit.
-uv run python -m evals.run_chat    --api-url https://abdallah-ai-three.vercel.app --limit 6 --delay 8
-uv run python -m evals.run_actions --api-url https://abdallah-ai-three.vercel.app --limit 6 --delay 8
+uv run python -m evals.run_chat    --api-url https://abdallah-thuieb.vercel.app --limit 6 --delay 8
+uv run python -m evals.run_actions --api-url https://abdallah-thuieb.vercel.app --limit 6 --delay 8
 
 # Try a lower limit on a PREVIEW only (an environment override for that one deployment):
 npx vercel deploy -e CHAT_RATE_PER_MINUTE=2

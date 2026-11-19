@@ -68,6 +68,7 @@ export function Composer({ t, onSend, busy, waitSeconds = 0, onStop, inputRef, v
       </p>
       <form
         onSubmit={submit}
+        data-greeting-skip
         className="flex items-center gap-1 rounded-full border border-ink-700 bg-ink-900 p-1.5 ps-5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)] focus-within:border-accent/60 sm:gap-2"
       >
         <label htmlFor="composer-input" className="sr-only">

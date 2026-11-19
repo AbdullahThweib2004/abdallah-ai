@@ -37,7 +37,7 @@ export function SuggestionChips({ label, suggestions, onPick }: Props) {
   const fade = "pointer-events-none absolute inset-y-0 w-12 from-ink-950 to-transparent transition-opacity sm:hidden";
 
   return (
-    <div className="relative -mx-4 sm:mx-0">
+    <div className="relative -mx-4 sm:mx-0" data-greeting-skip>
       <ul
         ref={listRef}
         aria-label={label}

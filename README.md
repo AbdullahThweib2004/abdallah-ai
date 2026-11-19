@@ -2,7 +2,7 @@
 
 > **Don't just visit Abdallah's portfolio. Talk to Abdallah.**
 
-**Live demo: [abdallah-ai-three.vercel.app](https://abdallah-ai-three.vercel.app)**
+**Live demo: [abdallah-thuieb.vercel.app](https://abdallah-thuieb.vercel.app)**
 
 An interactive, conversation-first portfolio. Visitors talk to Abdallah's AI representative by
 text or voice, in English or Arabic, and it answers from a verified knowledge base, opens the
@@ -20,7 +20,9 @@ through a 3D robot avatar.
 - **Bilingual EN/AR with full RTL.** The interface, the answers, the voice and the layout all
   switch between English and Arabic (Modern Standard Arabic, right-to-left), even mid-conversation.
 - **Voice in and voice out.** Hold a real conversation: voice activity detection ends your turn,
-  speech is transcribed, and the answer is spoken sentence by sentence while it streams.
+  speech is transcribed, and the answer is spoken sentence by sentence while it streams. On a
+  first visit the robot greets you out loud: a static, pre-generated clip that plays at once
+  when the browser allows it, else on your first click (or the "Say hi" button).
 - **3D robot avatar.** An original robot built from code (no model files) that follows the pointer,
   turns toward opened cards, blinks, and moves its mouth with the real audio while it listens and
   speaks. If WebGL is missing or lost, a lightweight animated orb takes its place.
@@ -192,7 +194,7 @@ uv run python -m evals.run_retrieval                               # local, no A
 uv run python -m evals.run_chat --model openai/gpt-oss-120b        # real provider
 uv run python -m evals.run_actions --model openai/gpt-oss-120b     # which card the AI opens
 uv run python -m evals.run_chat --only contact-en,contact-ar        # a quick subset (--limit N also works)
-uv run python -m evals.run_chat --api-url https://abdallah-ai-three.vercel.app --limit 6 --delay 8   # the live site
+uv run python -m evals.run_chat --api-url https://abdallah-thuieb.vercel.app --limit 6 --delay 8   # the live site
 ```
 
 The chat and action evals default to the cheaper fallback model and stop early, with the results

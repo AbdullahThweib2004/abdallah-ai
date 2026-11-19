@@ -69,7 +69,8 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
   const [notice, setNotice] = useState<VoiceNotice | null>(null);
   const [speech, setSpeech] = useState<SpeakerState>({ speaking: false, active: false });
-  const [replies, setReplies] = useState(initialReplies === "on");
+  // Voice replies are ON unless the visitor turned them off (cookie); the toggle still mutes.
+  const [replies, setReplies] = useState(initialReplies !== "off");
 
   const recorder = useRef<Recorder | null>(null);
   const speaker = useRef<Speaker | null>(null);
@@ -144,6 +145,13 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
   }, [setRepliesOn, unlock]);
 
   const stopSpeaking = useCallback(() => speaker.current?.stop(), []);
+
+  /** The static greeting clip (see useGreeting). */
+  const playGreeting = useCallback(
+    (url: string, text: string, language: ChatLanguage, viaGesture: boolean, onEnd: () => void) =>
+      speaker.current?.playGreeting(url, text, language, viaGesture, onEnd) ?? Promise.resolve("failed" as const),
+    [],
+  );
 
   const handleRecording = useCallback(
     async (recording: Recording) => {
@@ -238,6 +246,10 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
     speaking: speech.speaking,
     voicing: speech.active,
     replies,
+    // The speaker is created by the effect above, which runs before the effects of hooks
+    // declared after useVoice (e.g. useGreeting), so it exists once the config is known.
+    ready: config !== null,
+    playGreeting,
     listener,
     levels,
     unlock,

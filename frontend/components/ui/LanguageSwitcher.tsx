@@ -25,6 +25,7 @@ export function LanguageSwitcher({ locale, label, names }: Props) {
   return (
     <div
       role="group"
+      data-greeting-ignore
       aria-label={label}
       aria-busy={pending}
       className="flex items-center rounded-full border border-ink-700 bg-ink-900 p-0.5"

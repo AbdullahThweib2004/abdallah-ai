@@ -73,6 +73,8 @@ export const en = {
     countdown: "{s} s left",
     transcribing: "Transcribing your question…",
     replies: "Voice replies",
+    sayHi: "Say hi",
+    sayHiLabel: "Play the greeting",
     privacy: "Voice questions are transcribed by a third-party speech service and never stored.",
     notices: {
       micDenied: "Microphone access is blocked. Allow it in your browser settings, or type your question.",
