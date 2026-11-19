@@ -1,6 +1,6 @@
 # Requirements
 
-Source: `docs/spec.pdf` §4, §5.
+Source: the project specification (kept private), §4, §5.
 
 Priorities: **P0** = essential for the first public release, **P1** = important, **P2** = future enhancement.
 
@@ -25,7 +25,7 @@ Priorities: **P0** = essential for the first public release, **P1** = important,
 
 ## Documented deviations from the spec
 
-Product decisions by Abdallah that knowingly depart from `docs/spec.pdf`. Recorded 2026-11-18 (build step 9).
+Product decisions by Abdallah that knowingly depart from the original specification. Recorded 2026-11-18 (build step 9).
 
 | ID | Spec | Decision | Why / consequence |
 |---|---|---|---|

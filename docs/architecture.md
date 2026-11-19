@@ -1,6 +1,6 @@
 # Architecture
 
-Source: `docs/spec.pdf` §6, §12, §16.
+Source: the project specification (kept private), §6, §12, §16.
 
 ## Principles
 

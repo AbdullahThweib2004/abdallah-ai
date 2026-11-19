@@ -46,3 +46,12 @@ htmlcov/
 .idea/
 .vscode/
 *.swp
+
+# --- AI assistant context (kept local) ---
+CLAUDE.md
+.claude/
+.cursor/
+frontend/AGENTS.md
+
+# --- Private documents ---
+docs/spec.pdf

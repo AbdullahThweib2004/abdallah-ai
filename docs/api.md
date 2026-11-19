@@ -1,6 +1,6 @@
 # API
 
-Source: `docs/spec.pdf` §7.4, §13.
+Source: the project specification (kept private), §7.4, §13.
 
 The API is versioned under `/api/v1`. All requests and responses use strict Pydantic models.
 Interactive docs are served by FastAPI at `/docs` while the backend is running.
