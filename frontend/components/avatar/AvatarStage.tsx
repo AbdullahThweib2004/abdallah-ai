@@ -1,10 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Component, type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Component, type ReactNode, useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
 import type { AvatarState } from "@/hooks/useConversation";
 import { type CardSide, cardSideFor } from "@/lib/avatar/motion";
+import { initialRobotStatus, mountsRobot, robotReducer, showsOrb } from "@/lib/avatar/recovery";
 
 const WAVE_BARS = [0.45, 0.8, 0.6, 1, 0.7, 0.9, 0.5, 0.75, 0.4];
 
@@ -27,9 +28,6 @@ type Props = {
   /** Dev preview only: never load the robot, show the orb. */
   forceOrb?: boolean;
 };
-
-/** "orb": fallback in use (loading, no WebGL, or failed); "loading": robot fetching/compiling. */
-type Robot = "orb" | "loading" | "ready" | "failed";
 
 function useMedia(query: string, serverValue: boolean): boolean {
   const subscribe = useCallback(
@@ -82,12 +80,12 @@ class RobotBoundary extends Component<{ onError: (error: Error) => void; childre
 export function AvatarStage({ state, label, levels, cardOpen = false, rtl = false, reducedMotion, forceOrb = false }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
-  const [robot, setRobot] = useState<Robot>("orb");
+  const [{ phase: robot, generation }, dispatch] = useReducer(robotReducer, initialRobotStatus);
   const prefersReduced = useMedia("(prefers-reduced-motion: reduce)", false);
   const desktop = useMedia("(min-width: 64rem)", true);
   const still = reducedMotion ?? prefersReduced;
   const card: CardSide | null = cardOpen ? cardSideFor(desktop, rtl) : null;
-  const showOrb = robot !== "ready";
+  const showOrb = showsOrb(robot);
 
   // Mount the robot after the page has painted and the main thread is idle. Only once: when
   // the route is kept in a hidden <Activity> and shown again, effects re-run but state survives.
@@ -100,11 +98,7 @@ export function AvatarStage({ state, label, levels, cardOpen = false, rtl = fals
       if (cancelled) return;
       started.current = true;
       performance.mark("avatar:start");
-      if (!webglAvailable()) {
-        setRobot("failed");
-        return;
-      }
-      setRobot("loading");
+      dispatch({ type: "start", webgl: webglAvailable() });
     };
     const schedule = () => {
       if (typeof window.requestIdleCallback === "function") idle = window.requestIdleCallback(start, { timeout: 2500 });
@@ -147,10 +141,38 @@ export function AvatarStage({ state, label, levels, cardOpen = false, rtl = fals
     };
   }, [state, levels, showOrb, still]);
 
-  const fail = (error: Error) => {
-    console.warn("Avatar: 3D robot unavailable, showing the orb.", error.message);
-    setRobot("failed");
-  };
+  // WebGL context lost: the orb shows meanwhile. Recreate the robot when the browser restores
+  // the context (onRestored), or on the next visibility change / interaction if it never does.
+  useEffect(() => {
+    if (robot !== "lost") return;
+    const retry = () => dispatch({ type: "retry", webgl: webglAvailable() });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") retry();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pointerdown", retry, { passive: true });
+    window.addEventListener("keydown", retry);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pointerdown", retry);
+      window.removeEventListener("keydown", retry);
+    };
+  }, [robot]);
+
+  // Callbacks are bound to the canvas generation they were created for (see recovery.ts).
+  const fail = useCallback(
+    (error: Error) => {
+      console.warn("Avatar: 3D robot unavailable, showing the orb.", error.message);
+      dispatch({ type: "error", generation });
+    },
+    [generation],
+  );
+  const lost = useCallback(() => {
+    console.info("Avatar: WebGL context lost, showing the orb until it is restored.");
+    dispatch({ type: "lost", generation });
+  }, [generation]);
+  const restored = useCallback(() => dispatch({ type: "restored", generation }), [generation]);
+  const ready = useCallback(() => dispatch({ type: "ready", generation }), [generation]);
 
   return (
     <div
@@ -186,16 +208,18 @@ export function AvatarStage({ state, label, levels, cardOpen = false, rtl = fals
         </div>
       </div>
 
-      {(robot === "loading" || robot === "ready") && (
-        <div className="avatar-robot absolute -inset-[16%]">
+      {mountsRobot(robot) && (
+        <div key={generation} className="avatar-robot absolute -inset-[16%]">
           <RobotBoundary onError={fail}>
             <RobotCanvas
               state={state}
               reducedMotion={still}
               card={card}
               levels={levels}
-              onReady={() => setRobot((current) => (current === "loading" ? "ready" : current))}
+              onReady={ready}
               onFail={fail}
+              onLost={lost}
+              onRestored={restored}
             />
           </RobotBoundary>
         </div>

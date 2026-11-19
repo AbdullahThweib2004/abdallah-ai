@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useThree } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 import type { AvatarState } from "@/hooks/useConversation";
@@ -16,8 +16,12 @@ type Props = {
   levels?: () => number[] | null;
   /** First frame drawn: the stage hides the orb. */
   onReady: () => void;
-  /** WebGL context lost: the stage falls back to the orb. */
+  /** Loading or rendering failed for good: the stage falls back to the orb. */
   onFail: (error: Error) => void;
+  /** WebGL context lost (temporary): the stage shows the orb but keeps this canvas mounted. */
+  onLost: () => void;
+  /** The browser restored the context: the stage recreates the robot on a fresh canvas. */
+  onRestored: () => void;
 };
 
 /** Resolves when the main thread is idle (or soon), so heavy steps run as separate tasks. */
@@ -114,14 +118,15 @@ function Warmup({ onDone, onFail }: { onDone: () => void; onFail: (error: Error)
  * The lazily loaded 3D stage (three.js + react-three-fiber). After the warm-up it renders only
  * while the tab is visible and the stage is on screen; reduced motion renders one frame per change.
  */
-export default function RobotCanvas({ state, reducedMotion, card, levels, onReady, onFail }: Props) {
+export default function RobotCanvas({ state, reducedMotion, card, levels, onReady, onFail, onLost, onRestored }: Props) {
   const anchor = useRef<HTMLDivElement>(null);
   const pointer = useRef<{ x: number; y: number; at: number; touch: boolean } | null>(null);
   const [onScreen, setOnScreen] = useState(true);
   const [tabVisible, setTabVisible] = useState(true);
-  // r3f forces a context loss when it unmounts; only a loss while mounted is a failure.
+  // r3f forces a context loss when it unmounts (during the commit, before passive cleanups);
+  // only a loss while mounted is reported, so the flag is cleared in a LAYOUT cleanup.
   const mounted = useRef(true);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
@@ -180,9 +185,13 @@ export default function RobotCanvas({ state, reducedMotion, card, levels, onRead
           gl.setClearColor(0x000000, 0);
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.05;
+          // preventDefault() tells the browser we want the context back (`webglcontextrestored`).
           gl.domElement.addEventListener("webglcontextlost", (event) => {
             event.preventDefault();
-            if (mounted.current) onFail(new Error("WebGL context lost"));
+            if (mounted.current) onLost();
+          });
+          gl.domElement.addEventListener("webglcontextrestored", () => {
+            if (mounted.current) onRestored();
           });
         }}
       >
