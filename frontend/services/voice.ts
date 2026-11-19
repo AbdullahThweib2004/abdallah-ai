@@ -77,12 +77,51 @@ export async function transcribe(
   return (await response.json()) as Transcript;
 }
 
-/** Start synthesizing one sentence; the body streams `audio/mpeg`. */
-export function fetchSpeech(text: string, language: ChatLanguage, signal: AbortSignal): Promise<Response> {
-  return request("/speak", {
+export type SpeechAlignment = { chars: string[]; starts: number[]; ends: number[] };
+
+function decodeBase64(data: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Synthesize one sentence with character timestamps. The response is NDJSON: lines
+ * `{"audio": base64}` (MP3 bytes, in order) and `{"alignment": {chars, starts, ends}}`
+ * (seconds from the start of this sentence's audio). Calls back as each line arrives.
+ */
+export async function streamSpeech(
+  text: string,
+  language: ChatLanguage,
+  signal: AbortSignal,
+  onAudio: (bytes: Uint8Array<ArrayBuffer>) => void,
+  onAlignment: (alignment: SpeechAlignment) => void,
+): Promise<void> {
+  const response = await request("/speak", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "audio/mpeg" },
-    body: JSON.stringify({ text, language }),
+    headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+    body: JSON.stringify({ text, language, timestamps: true }),
     signal,
   });
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  const handle = (line: string) => {
+    if (!line.trim()) return;
+    const item = JSON.parse(line) as { audio?: string; alignment?: SpeechAlignment };
+    if (item.audio) onAudio(decodeBase64(item.audio));
+    if (item.alignment) onAlignment(item.alignment);
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    let newline = buffer.indexOf("\n");
+    while (newline !== -1) {
+      handle(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+    }
+  }
+  handle(buffer);
 }

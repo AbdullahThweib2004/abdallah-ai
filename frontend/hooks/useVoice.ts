@@ -6,6 +6,8 @@ import type { AnswerStatus } from "@/hooks/useConversation";
 import { type VoiceRepliesPreference, saveVoiceReplies } from "@/lib/voice/preferences";
 import { MicError, type MicErrorKind, Recorder, type Recording } from "@/lib/voice/recorder";
 import { Speaker, type SpeakerState } from "@/lib/voice/speaker";
+import type { Alignment } from "@/lib/voice/timing";
+import type { VoiceRecord } from "@/lib/voice/transcript";
 import type { ChatLanguage } from "@/services/types";
 import { type VoiceConfig, VoiceHttpError, getVoiceConfig, transcribe } from "@/services/voice";
 
@@ -24,7 +26,7 @@ export type VoiceNotice =
 
 /** Hooks the conversation calls while an answer streams (see useConversation). */
 export type AnswerListener = {
-  onAnswerStart: (language: ChatLanguage) => void;
+  onAnswerStart: (language: ChatLanguage, id: number) => void;
   onToken: (text: string) => void;
   onAnswerEnd: (status: Exclude<AnswerStatus, "streaming">) => void;
 };
@@ -71,6 +73,8 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
   const [speech, setSpeech] = useState<SpeakerState>({ speaking: false, active: false });
   // Voice replies are ON unless the visitor turned them off (cookie); the toggle still mutes.
   const [replies, setReplies] = useState(initialReplies !== "off");
+  // What the voice did with each answer / the greeting (keys: "answer:<id>", "greeting").
+  const [records, setRecords] = useState<Record<string, VoiceRecord>>({});
 
   const recorder = useRef<Recorder | null>(null);
   const speaker = useRef<Speaker | null>(null);
@@ -111,6 +115,7 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
     if (!config) return;
     const instance = new Speaker(config.tts.provider === "browser" ? "browser" : "server", {
       onState: setSpeech,
+      onRecord: (owner, record) => setRecords((all) => ({ ...all, [owner]: record })),
       onBrowserVoiceMissing: () => showNotice("noBrowserVoice"),
     });
     speaker.current = instance;
@@ -148,8 +153,16 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
 
   /** The static greeting clip (see useGreeting). */
   const playGreeting = useCallback(
-    (url: string, text: string, language: ChatLanguage, viaGesture: boolean, onEnd: () => void) =>
-      speaker.current?.playGreeting(url, text, language, viaGesture, onEnd) ?? Promise.resolve("failed" as const),
+    (
+      url: string,
+      text: string,
+      language: ChatLanguage,
+      viaGesture: boolean,
+      onEnd: () => void,
+      alignment: Alignment | null = null,
+    ) =>
+      speaker.current?.playGreeting(url, text, language, viaGesture, onEnd, alignment) ??
+      Promise.resolve("failed" as const),
     [],
   );
 
@@ -219,10 +232,10 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
 
   const listener = useMemo<AnswerListener>(
     () => ({
-      onAnswerStart: (language) => {
+      onAnswerStart: (language, id) => {
         const instance = speaker.current;
         if (!repliesRef.current || !instance?.unlocked) return;
-        instance.begin(language);
+        instance.begin(language, `answer:${id}`);
       },
       onToken: (text) => speaker.current?.push(text),
       onAnswerEnd: (status) => {
@@ -232,6 +245,9 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
     }),
     [],
   );
+
+  /** Word timing of whatever is being voiced now (read every animation frame). */
+  const progress = useCallback(() => speaker.current?.progress() ?? null, []);
 
   /** Live levels for the avatar: the microphone while listening, else the playing audio. */
   const levels = useCallback(
@@ -249,6 +265,8 @@ export function useVoice({ initialReplies, onTranscript, onInterrupt }: Options)
     // The speaker is created by the effect above, which runs before the effects of hooks
     // declared after useVoice (e.g. useGreeting), so it exists once the config is known.
     ready: config !== null,
+    records,
+    progress,
     playGreeting,
     listener,
     levels,

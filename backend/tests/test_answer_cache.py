@@ -109,12 +109,17 @@ async def test_cache_persists_per_namespace_and_prunes_only_its_stale_folders(tm
     await old.put("k1", reply())
     cache = AnswerCache(kb_hash="kb", prompt_version="v6", directory=tmp_path)
     await cache.put("k2", reply("Saved."))
-    await cache.put_audio("a1", b"mp3")
+    await cache.put_audio(
+        "a1", b"mp3", {"chars": ["H", "i"], "starts": [0, 0.1], "ends": [0.1, 0.2]}
+    )
 
     reloaded = AnswerCache(kb_hash="kb", prompt_version="v6", directory=tmp_path)
     assert await reloaded.get("k2") == await cache.get("k2")
     assert await reloaded.get("k1") is None  # another knowledge/prompt version
-    assert await reloaded.get_audio("a1") == b"mp3"
+    assert await reloaded.get_audio("a1") == (
+        b"mp3",
+        {"chars": ["H", "i"], "starts": [0, 0.1], "ends": [0.1, 0.2]},
+    )  # the timestamps are persisted with the audio
     assert (tmp_path / "unrelated").is_dir()  # never touches folders it did not create
     assert len([p for p in tmp_path.iterdir() if p.name != "unrelated"]) == 1  # noqa: ASYNC240
 

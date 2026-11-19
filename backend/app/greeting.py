@@ -5,9 +5,11 @@ visitor as a static file (the greeting never calls ElevenLabs at runtime).
     cd backend && uv run python -m app.greeting           # regenerate only what changed
     cd backend && uv run python -m app.greeting --check   # exit 1 if a file is out of date
 
-`greeting.json` next to the files stores, per language, a hash of (format, spoken text,
-language, voice id, model). A file is regenerated only when that hash changes, e.g. after the
-"Short self-introduction" in knowledge_base/profile/about.md is edited or the voice changes.
+`greeting-{en,ar}.json` hold the character timestamps of each clip (for word-by-word
+highlighting). `greeting.json` next to the files stores, per language, the caption text and a
+hash of (format, spoken text, language, voice id, model). A file is regenerated only when
+that hash changes, e.g. after the "Short self-introduction" in
+knowledge_base/profile/about.md is edited or the voice changes.
 tests/test_greeting.py fails when the committed files no longer match the knowledge base.
 """
 
@@ -20,9 +22,11 @@ from pathlib import Path
 
 from app.core.config import Settings, get_settings
 from app.services.knowledge_service import load_knowledge_service
+from app.voice.base import Alignment
 from app.voice.text import clean_for_speech
 
-GREETING_FORMAT = 1
+# 2: generated with character timestamps (greeting-{lang}.json) for word highlighting.
+GREETING_FORMAT = 2
 LANGUAGES = ("en", "ar")
 AUDIO_DIR = Path(__file__).resolve().parents[2] / "frontend" / "public" / "audio"
 MANIFEST = AUDIO_DIR / "greeting.json"
@@ -69,18 +73,29 @@ def stale_languages(settings: Settings) -> list[str]:
         for language, item in wanted(settings).items()
         if manifest.get(language, {}).get("hash") != item["hash"]
         or not (AUDIO_DIR / f"greeting-{language}.mp3").is_file()
+        or not (AUDIO_DIR / f"greeting-{language}.json").is_file()
     ]
 
 
-async def synthesize(settings: Settings, spoken: str, language: str) -> bytes:
+async def synthesize(settings: Settings, spoken: str, language: str) -> tuple[bytes, Alignment]:
     from app.voice.factory import build_tts
 
     tts = build_tts(settings.model_copy(update={"tts_provider": "elevenlabs"}))
     assert tts is not None
+    audio = bytearray()
+    alignment = Alignment([], [], [])
     try:
-        return b"".join([chunk async for chunk in tts.stream(spoken, language=language)])
+        async for chunk in tts.stream_timed(spoken, language=language):
+            audio += chunk.audio
+            if chunk.alignment:
+                print(  # how the provider times its chunks (absolute vs chunk-relative)
+                    f"  chunk: {len(chunk.audio)} bytes, chars {len(chunk.alignment.chars)}, "
+                    f"{chunk.alignment.starts[0]:.2f}–{chunk.alignment.ends[-1]:.2f} s"
+                )
+                alignment.extend(chunk.alignment)
     finally:
         await tts.aclose()
+    return bytes(audio), alignment
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -109,8 +124,12 @@ def main(argv: list[str] | None = None) -> int:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     for language in stale:
         item = targets[language]
-        audio = asyncio.run(synthesize(settings, item["spoken"], language))
+        audio, alignment = asyncio.run(synthesize(settings, item["spoken"], language))
         (AUDIO_DIR / f"greeting-{language}.mp3").write_bytes(audio)
+        timing = {"text": item["text"], "spoken": item["spoken"], "alignment": alignment.to_json()}
+        (AUDIO_DIR / f"greeting-{language}.json").write_text(
+            json.dumps(timing, ensure_ascii=False) + "\n", "utf-8"
+        )
         manifest[language] = {
             "text": item["text"],
             "file": f"greeting-{language}.mp3",

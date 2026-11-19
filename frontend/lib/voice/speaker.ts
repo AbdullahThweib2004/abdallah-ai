@@ -1,9 +1,21 @@
-import { VoiceHttpError, fetchSpeech } from "@/services/voice";
+import { VoiceHttpError, streamSpeech } from "@/services/voice";
 import type { ChatLanguage } from "@/services/types";
 
 import { spaceArabicLatin } from "@/lib/text/spacing";
 import { LevelMeter } from "./levels";
 import { SentenceSplitter } from "./sentences";
+import {
+  type Alignment,
+  type TimedToken,
+  type Token,
+  progressAt,
+  proportionalTimes,
+  sourceIndex,
+  timeTokens,
+  tokenAt,
+  tokenize,
+} from "./timing";
+import type { LiveProgress, VoiceRecord } from "./transcript";
 
 /**
  * Speaks a streamed answer sentence by sentence.
@@ -19,7 +31,16 @@ import { SentenceSplitter } from "./sentences";
  *
  * One <audio> element is routed through an AnalyserNode once, so the avatar's waveform
  * follows the real audio level.
+ *
+ * Word timing (the transcript's "lighting up"): every sentence arrives with character
+ * timestamps (NDJSON from /voice/speak); `progress()` maps the REAL `audio.currentTime` of
+ * the sentence playing now to words of the answer (offsets into its text). The browser voice
+ * uses `boundary` events, or a proportional estimate when the browser sends none. Each voiced
+ * answer (or the greeting) is an "owner"; `onRecord` reports live / done / stopped.
  */
+
+/** Browser voices speak roughly this many characters per second (estimate only). */
+const BROWSER_CHARS_PER_SECOND = 14;
 
 const MAX_IN_FLIGHT = 2;
 const MSE_TYPE = "audio/mpeg";
@@ -34,7 +55,19 @@ export type SpeakerState = {
 };
 
 type Item = {
+  /** What the voice is asked to say (with "و React" spacing). */
   text: string;
+  /** The same sentence as it appears in the owner's text, and where it starts there. */
+  source: string;
+  offset: number;
+  /** Words of `source`, with offsets in the owner's text. */
+  tokens: Token[];
+  alignment: Alignment;
+  timed: TimedToken[] | null;
+  timedChars: number;
+  /** Browser voice: the latest boundary (offset in the owner's text) and when it started. */
+  boundary: number | null;
+  startedAt: number;
   language: ChatLanguage;
   chunks: Uint8Array<ArrayBuffer>[];
   done: boolean;
@@ -54,8 +87,13 @@ type Answer = {
   firstAudio: boolean;
 };
 
+/** What is being voiced: an answer (`answer:<id>`) or the greeting. */
+type Owner = { id: string; text: string; cursor: number; litUpTo: number };
+
 type Callbacks = {
   onState: (state: SpeakerState) => void;
+  /** An owner started, finished, or was stopped (for the transcript's highlighting). */
+  onRecord?: (owner: string, record: VoiceRecord) => void;
   /** No speechSynthesis voice for this language on this device: captions only. */
   onBrowserVoiceMissing: (language: ChatLanguage) => void;
 };
@@ -83,6 +121,7 @@ export class Speaker {
   private browserVoice = false;
   private clipEnded: (() => void) | null = null;
   private clipToken = 0;
+  private owner: Owner | null = null;
 
   constructor(
     mode: VoiceMode,
@@ -135,6 +174,7 @@ export class Speaker {
     language: ChatLanguage,
     viaGesture: boolean,
     onEnd: () => void,
+    alignment: Alignment | null = null,
   ): Promise<"playing" | "blocked" | "failed"> {
     const audio = this.audio;
     if (!audio) return "failed";
@@ -142,10 +182,14 @@ export class Speaker {
     const token = ++this.clipToken;
     if (viaGesture) this.unlock();
     const item: Item = {
-      text, language, chunks: [], done: true, failed: false, started: true, listeners: new Set(), clip: true,
+      ...newItem(text, text, 0, language, alignment),
+      done: true,
+      started: true,
+      clip: true,
     };
     this.current = item;
     this.clipEnded = onEnd;
+    this.startOwner("greeting", text);
     audio.src = url;
     try {
       await audio.play();
@@ -182,6 +226,8 @@ export class Speaker {
   private resetClip(): void {
     this.clipEnded = null;
     this.current = null;
+    if (this.owner) this.callbacks.onRecord?.(this.owner.id, { state: "pending" });
+    this.owner = null; // not played (yet): the greeting stays "pending"
     if (this.audio) {
       this.audio.pause();
       this.audio.removeAttribute("src");
@@ -197,8 +243,9 @@ export class Speaker {
     ended?.();
   }
 
-  begin(language: ChatLanguage): void {
+  begin(language: ChatLanguage, owner = "answer"): void {
     this.stop();
+    this.startOwner(owner, "");
     this.answer = {
       language,
       mode: this.serverVoice ? "server" : "browser",
@@ -212,6 +259,7 @@ export class Speaker {
 
   push(text: string): void {
     if (!this.answer || this.answer.ended) return;
+    if (this.owner) this.owner.text += text;
     for (const sentence of this.answer.splitter.push(text)) this.enqueue(sentence);
   }
 
@@ -226,6 +274,7 @@ export class Speaker {
   /** Stop all speech now (Stop button, barge-in, new question). */
   stop(): void {
     this.clipToken++; // a greeting attempt in progress is cancelled too
+    this.endOwner("stopped");
     if (this.current?.clip) this.endClip();
     this.answer?.abort.abort();
     this.answer = null;
@@ -256,16 +305,14 @@ export class Speaker {
   private enqueue(text: string): void {
     const answer = this.answer;
     if (!answer) return;
-    const item: Item = {
-      // "وReact" would be read as one word; both voices get "و React".
-      text: spaceArabicLatin(text),
-      language: answer.language,
-      chunks: [],
-      done: false,
-      failed: false,
-      started: false,
-      listeners: new Set(),
-    };
+    // Where this sentence sits in the answer text (the splitter trims whitespace).
+    const source = text.trim();
+    const owner = this.owner;
+    let offset = owner ? owner.text.indexOf(source, owner.cursor) : 0;
+    if (offset < 0) offset = owner?.cursor ?? 0;
+    if (owner) owner.cursor = offset + source.length;
+    // "وReact" would be read as one word; both voices get "و React".
+    const item = newItem(spaceArabicLatin(source), source, offset, answer.language, null);
     this.queue.push(item);
     if (answer.mode === "server") {
       this.pendingFetches.push(item);
@@ -294,14 +341,20 @@ export class Speaker {
       return;
     }
     try {
-      const response = await fetchSpeech(item.text, item.language, answer.abort.signal);
-      const reader = response.body!.getReader();
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        item.chunks.push(value as Uint8Array<ArrayBuffer>);
-        notify(item);
-      }
+      await streamSpeech(
+        item.text,
+        item.language,
+        answer.abort.signal,
+        (bytes) => {
+          item.chunks.push(bytes);
+          notify(item);
+        },
+        (alignment) => {
+          item.alignment.chars.push(...alignment.chars);
+          item.alignment.starts.push(...alignment.starts);
+          item.alignment.ends.push(...alignment.ends);
+        },
+      );
     } catch (error) {
       if (answer.abort.signal.aborted) return;
       if (item.chunks.length === 0) {
@@ -322,6 +375,7 @@ export class Speaker {
     const item = this.queue[0];
     if (!item) {
       if (this.answer.ended) {
+        this.endOwner("done");
         this.answer = null;
         this.speaking = false;
         this.emit();
@@ -350,7 +404,14 @@ export class Speaker {
 
   private finishCurrent(): void {
     if (!this.current) return;
-    if (this.current.clip) this.endClip();
+    const finished = this.current;
+    if (this.owner) {
+      this.owner.litUpTo = Math.max(this.owner.litUpTo, finished.offset + finished.source.length);
+    }
+    if (finished.clip) {
+      this.endOwner("done");
+      this.endClip();
+    }
     this.current = null;
     this.revoke();
     this.speaking = false;
@@ -436,8 +497,13 @@ export class Speaker {
     utterance.lang = bcp47(item.language);
     utterance.voice = voices.find((voice) => voice.localService) ?? voices[0];
     utterance.onstart = () => {
+      item.startedAt = performance.now();
       this.browserVoice = true;
       this.onPlaying();
+    };
+    utterance.onboundary = (event) => {
+      if (event.name && event.name !== "word") return;
+      item.boundary = item.offset + sourceIndex(item.source, item.text, event.charIndex);
     };
     utterance.onend = () => this.finishCurrent();
     utterance.onerror = () => this.finishCurrent();
@@ -446,6 +512,7 @@ export class Speaker {
 
   /** Nothing can be spoken for this answer (no voice on this device): captions only. */
   private dropAnswer(): void {
+    this.endOwner("done"); // nothing could be voiced: the text is shown fully bright
     if (this.current?.clip) this.endClip();
     this.answer?.abort.abort();
     this.answer = null;
@@ -464,6 +531,65 @@ export class Speaker {
     this.emit();
   }
 
+  // --------------------------------------------------------------------- word timing
+
+  private startOwner(id: string, text: string): void {
+    this.owner = { id, text, cursor: 0, litUpTo: 0 };
+    this.callbacks.onRecord?.(id, { state: "live" });
+  }
+
+  private endOwner(how: "done" | "stopped"): void {
+    const owner = this.owner;
+    if (!owner) return;
+    const litUpTo = this.progress()?.litUpTo ?? owner.litUpTo;
+    this.owner = null;
+    this.callbacks.onRecord?.(owner.id, how === "done" ? { state: "done" } : { state: "stopped", litUpTo });
+  }
+
+  /** Word timing of the item playing now (recomputed as its alignment grows). */
+  private timesFor(item: Item, duration: number): TimedToken[] {
+    if (item.alignment.chars.length) {
+      if (!item.timed || item.timedChars !== item.alignment.chars.length) {
+        item.timed = timeTokens(item.tokens, item.alignment);
+        item.timedChars = item.alignment.chars.length;
+      }
+      return item.timed;
+    }
+    return proportionalTimes(item.tokens, duration);
+  }
+
+  /**
+   * How far the current owner has been spoken: words up to `litUpTo` (an offset in its text)
+   * are lit, `current` is the word being spoken. Call every animation frame.
+   */
+  progress(): (LiveProgress & { owner: string }) | null {
+    const owner = this.owner;
+    if (!owner) return null;
+    const item = this.current;
+    if (!item || !item.started) return { owner: owner.id, litUpTo: owner.litUpTo, current: null };
+    let live: LiveProgress;
+    if (this.browserVoice) {
+      if (item.boundary !== null) {
+        const word = tokenAt(item.tokens, item.boundary);
+        live = { litUpTo: word?.end ?? item.offset, current: word };
+      } else {
+        const elapsed = (performance.now() - item.startedAt) / 1000;
+        const estimate = Math.max(1, item.text.length / BROWSER_CHARS_PER_SECOND);
+        live = progressAt(proportionalTimes(item.tokens, estimate), elapsed);
+      }
+    } else if (this.audio) {
+      const duration = Number.isFinite(this.audio.duration) ? this.audio.duration : item.text.length / 14;
+      live = progressAt(this.timesFor(item, duration), this.audio.currentTime);
+    } else {
+      live = { litUpTo: owner.litUpTo, current: null };
+    }
+    return {
+      owner: owner.id,
+      litUpTo: Math.max(owner.litUpTo, live.litUpTo),
+      current: live.current ? { start: live.current.start, end: live.current.end } : null,
+    };
+  }
+
   private revoke(): void {
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = null;
@@ -475,4 +601,30 @@ export class Speaker {
       active: this.answer !== null || (this.current !== null && !this.current.clip),
     });
   }
+}
+
+function newItem(
+  text: string,
+  source: string,
+  offset: number,
+  language: ChatLanguage,
+  alignment: Alignment | null,
+): Item {
+  return {
+    text,
+    source,
+    offset,
+    tokens: tokenize(source, offset),
+    alignment: alignment ?? { chars: [], starts: [], ends: [] },
+    timed: null,
+    timedChars: 0,
+    boundary: null,
+    startedAt: 0,
+    language,
+    chunks: [],
+    done: false,
+    failed: false,
+    started: false,
+    listeners: new Set(),
+  };
 }

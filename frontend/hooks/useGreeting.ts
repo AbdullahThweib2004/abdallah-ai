@@ -11,6 +11,7 @@ import {
   ignoredKey,
   initialGreeting,
 } from "@/lib/voice/greeting";
+import type { Alignment } from "@/lib/voice/timing";
 import type { ChatLanguage } from "@/services/types";
 
 type Options = {
@@ -23,7 +24,14 @@ type Options = {
   language: ChatLanguage;
   /** The greeting text in each language (the caption; also the browser-voice fallback). */
   texts: Record<ChatLanguage, string>;
-  play: (url: string, text: string, language: ChatLanguage, viaGesture: boolean, onEnd: () => void) => Promise<PlayResult>;
+  play: (
+    url: string,
+    text: string,
+    language: ChatLanguage,
+    viaGesture: boolean,
+    onEnd: () => void,
+    alignment: Alignment | null,
+  ) => Promise<PlayResult>;
 };
 
 function storage(): Storage | null {
@@ -43,6 +51,19 @@ export function useGreeting({ ready, replies, conversationStarted, language, tex
   const [state, dispatch] = useReducer(greetingReducer, initialGreeting);
   const [plays, setPlays] = useState(0);
   const latest = useRef({ language, texts, play });
+  // Character timestamps of the static greeting clips (greeting-{en,ar}.json), for the
+  // word-by-word highlighting. Small files, fetched once; until then timing is proportional.
+  const alignments = useRef<Partial<Record<ChatLanguage, Alignment>>>({});
+  useEffect(() => {
+    for (const lang of ["en", "ar"] as const) {
+      fetch(`/audio/greeting-${lang}.json`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data: { alignment?: Alignment } | null) => {
+          if (data?.alignment) alignments.current[lang] = data.alignment;
+        })
+        .catch(() => undefined);
+    }
+  }, []);
   useEffect(() => {
     latest.current = { language, texts, play };
   });
@@ -50,7 +71,8 @@ export function useGreeting({ ready, replies, conversationStarted, language, tex
   const attempt = useCallback((viaGesture: boolean) => {
     const { language: lang, texts: all, play: start } = latest.current;
     // The language at play time: a switch before the first play changes the greeting.
-    void start(greetingUrl(lang), all[lang], lang, viaGesture, () => dispatch({ type: "ended" })).then((result) => {
+    const timing = alignments.current[lang] ?? null;
+    void start(greetingUrl(lang), all[lang], lang, viaGesture, () => dispatch({ type: "ended" }), timing).then((result) => {
       if (result === "playing") {
         storage()?.setItem(GREETING_PLAYED_KEY, "1");
         setPlays((count) => count + 1);

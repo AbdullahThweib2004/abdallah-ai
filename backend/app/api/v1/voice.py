@@ -150,7 +150,14 @@ async def transcribe_audio(request: Request) -> TranscribeResponse | JSONRespons
     "/speak",
     response_class=StreamingResponse,
     response_model=None,
-    responses={200: {"content": {"audio/mpeg": {}}, "description": "Streamed MP3"}, **_ERRORS},
+    responses={
+        200: {
+            "content": {"audio/mpeg": {}, "application/x-ndjson": {}},
+            "description": "Streamed MP3, or NDJSON lines {audio: base64} / {alignment: "
+            "{chars, starts, ends}} when `timestamps` is true",
+        },
+        **_ERRORS,
+    },
 )
 async def speak_text(body: SpeakRequest, request: Request) -> StreamingResponse | JSONResponse:
     if limited := await _rate_limited(request, "tts_rate_limiter"):
@@ -166,6 +173,7 @@ async def speak_text(body: SpeakRequest, request: Request) -> StreamingResponse 
             body.language,
             cache=request.app.state.answer_cache,
             voice=f"{tts.name}:{tts.model}:{voice_id}" if tts else "",
+            timestamps=body.timestamps,
         )
     except VoiceRequestError as exc:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else {}

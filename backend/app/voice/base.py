@@ -21,6 +21,40 @@ class Transcription:
     no_speech: bool = False
 
 
+@dataclass
+class Alignment:
+    """Character timestamps of synthesized speech, in seconds from the start of the clip:
+    `chars[i]` is spoken from `starts[i]` to `ends[i]`."""
+
+    chars: list[str]
+    starts: list[float]
+    ends: list[float]
+
+    def to_json(self) -> dict[str, list]:
+        return {
+            "chars": self.chars,
+            "starts": [round(t, 3) for t in self.starts],
+            "ends": [round(t, 3) for t in self.ends],
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -> "Alignment":
+        return cls(list(data["chars"]), list(data["starts"]), list(data["ends"]))
+
+    def extend(self, other: "Alignment") -> None:
+        self.chars += other.chars
+        self.starts += other.starts
+        self.ends += other.ends
+
+
+@dataclass(frozen=True)
+class SpeechChunk:
+    """A piece of synthesized audio, with the timestamps of the characters it completes."""
+
+    audio: bytes
+    alignment: Alignment | None = None
+
+
 class VoiceError(Exception):
     """Provider failure. Messages must never contain secrets, audio or raw provider responses."""
 
@@ -75,6 +109,10 @@ class TTSProvider(Protocol):
 
     def stream(self, text: str, *, language: Language) -> AsyncIterator[bytes]:
         """Synthesize already-cleaned text and yield audio bytes as they arrive."""
+        ...
+
+    def stream_timed(self, text: str, *, language: Language) -> AsyncIterator[SpeechChunk]:
+        """Like `stream`, with character timestamps (seconds from the start of this clip)."""
         ...
 
     async def aclose(self) -> None: ...

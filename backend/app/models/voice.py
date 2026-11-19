@@ -47,6 +47,8 @@ class SpeakRequest(_Strict):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_SPEAK_CHARS)
     ]
     language: Literal["en", "ar"]
+    # True: NDJSON with base64 audio + character timestamps (word highlighting) instead of MP3.
+    timestamps: bool = False
 
 
 class VoiceErrorResponse(_Strict):

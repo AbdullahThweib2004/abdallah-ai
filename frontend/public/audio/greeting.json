@@ -1,20 +1,20 @@
 {
   "en": {
+    "text": "Hi, I'm the AI version of Abdallah Thuieb, an AI engineer from Palestine who builds AI you can actually trust: assistants that back every answer with a source, a platform that catches AI agents going rogue, and even a neural-network engine he wrote from scratch in C++. Ask me anything about his work, and every answer will come from what he has really built.",
     "file": "greeting-en.mp3",
-    "hash": "b9caf8bc94ab8cca882cc8ed1569c84a13c02ca18830c7176867e781ce1122c8",
+    "hash": "4294a96cf2cb386f177adf08679a45a051c6d29c20aeb3090a63041f099a83a2",
     "voice": "iP95p4xoKVk53GoZ742B",
     "model": "eleven_v4_turbo",
     "chars": 359,
-    "bytes": 180184,
-    "text": "Hi, I'm the AI version of Abdallah Thuieb, an AI engineer from Palestine who builds AI you can actually trust: assistants that back every answer with a source, a platform that catches AI agents going rogue, and even a neural-network engine he wrote from scratch in C++. Ask me anything about his work, and every answer will come from what he has really built."
+    "bytes": 181438
   },
   "ar": {
+    "text": "أهلاً بك! أنا النسخة الذكية من عبدالله ذويب، مهندس ذكاء اصطناعي من فلسطين يبني أنظمة AI يمكنك أن تثق بها: مساعدين يدعمون كل إجابة بمصدرها، ومنصة تكشف وكلاء الذكاء الاصطناعي حين يخرجون عن السيطرة، وحتى محرك شبكات عصبية كتبه من الصفر بلغة C++. اسألني أي شيء عن أعماله، وكل إجابة ستكون مما بناه فعلاً.",
     "file": "greeting-ar.mp3",
-    "hash": "8ca85017b285425ba33714876752745295ae5926d05ed69967f10a39fcaebfab",
+    "hash": "cb445eff0b552b42daa5c131d9da5927f8481b0e0d77229bd4161606238dbb9f",
     "voice": "iP95p4xoKVk53GoZ742B",
     "model": "eleven_v4_turbo",
     "chars": 298,
-    "bytes": 217382,
-    "text": "أهلاً بك! أنا النسخة الذكية من عبدالله ذويب، مهندس ذكاء اصطناعي من فلسطين يبني أنظمة AI يمكنك أن تثق بها: مساعدين يدعمون كل إجابة بمصدرها، ومنصة تكشف وكلاء الذكاء الاصطناعي حين يخرجون عن السيطرة، وحتى محرك شبكات عصبية كتبه من الصفر بلغة C++. اسألني أي شيء عن أعماله، وكل إجابة ستكون مما بناه فعلاً."
+    "bytes": 218636
   }
 }

@@ -34,6 +34,12 @@ logger = logging.getLogger(__name__)
 # Part of every key AND of the folder name: bumping it drops all stored answers on the next
 # start (2: only main-model answers that pass the rule checks are stored).
 CACHE_FORMAT = 2
+# Part of every AUDIO key: 3 = audio stored together with its character timestamps (older
+# audio, without them, is simply never found again and expires).
+AUDIO_FORMAT = 3
+
+# Audio of one spoken sentence, with its character timestamps when the provider gave them.
+CachedAudio = tuple[bytes, dict | None]
 
 _DIACRITICS = re.compile(r"[\u064B-\u065F\u0670\u0640]")  # Arabic harakat, dagger alef, tatweel
 _APOSTROPHES = re.compile(r"['\u2019`]")
@@ -92,7 +98,7 @@ class AnswerCache:
         self._max = max_entries
         self._replies: OrderedDict[str, CachedReply] = OrderedDict()
         self._squashed: dict[str, tuple[str, str]] = {}  # key -> (language, squashed text)
-        self._audio: OrderedDict[str, bytes] = OrderedDict()
+        self._audio: OrderedDict[str, CachedAudio] = OrderedDict()
         self._dir: Path | None = None
         self.namespace = hashlib.sha256(
             f"{CACHE_FORMAT}|{kb_hash}|{prompt_version}".encode()
@@ -148,28 +154,35 @@ class AnswerCache:
 
     @staticmethod
     def audio_key(spoken: str, language: str, voice: str) -> str:
-        payload = json.dumps([CACHE_FORMAT, _squash(spoken), language, voice], ensure_ascii=False)
+        payload = json.dumps([AUDIO_FORMAT, _squash(spoken), language, voice], ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    async def get_audio(self, key: str) -> bytes | None:
-        audio = self._audio.get(key)
-        if audio is None and self._dir is not None:
+    async def get_audio(self, key: str) -> CachedAudio | None:
+        """(audio, alignment JSON or None) of a cached sentence."""
+        entry = self._audio.get(key)
+        if entry is None and self._dir is not None:
             path = self._dir / "audio" / f"{key}.mp3"
             if path.is_file():
-                audio = path.read_bytes()
-                self._audio[key] = audio
-        if audio is not None:
+                timing = path.with_suffix(".align.json")
+                alignment = json.loads(timing.read_text("utf-8")) if timing.is_file() else None
+                entry = (path.read_bytes(), alignment)
+                self._audio[key] = entry
+        if entry is not None:
             self._audio.move_to_end(key)
-        return audio
+        return entry
 
-    async def put_audio(self, key: str, audio: bytes) -> None:
-        self._audio[key] = audio
+    async def put_audio(self, key: str, audio: bytes, alignment: dict | None = None) -> None:
+        self._audio[key] = (audio, alignment)
         while len(self._audio) > self._max * 4:  # a few sentences per answer
             self._audio.popitem(last=False)
         if self._dir is not None:
             try:
                 (self._dir / "audio").mkdir(parents=True, exist_ok=True)
                 (self._dir / "audio" / f"{key}.mp3").write_bytes(audio)
+                if alignment is not None:
+                    (self._dir / "audio" / f"{key}.align.json").write_text(
+                        json.dumps(alignment, ensure_ascii=False), "utf-8"
+                    )
             except OSError as exc:
                 logger.warning("Answer cache: could not persist audio (%s)", exc)
 
@@ -278,9 +291,9 @@ class RedisAnswerCache(AnswerCache):
         await self._refresh_speech()
         return await super().speech_cacheable(text, language)
 
-    async def get_audio(self, key: str) -> bytes | None:
-        if (audio := await super().get_audio(key)) is not None:
-            return audio
+    async def get_audio(self, key: str) -> CachedAudio | None:
+        if (entry := await super().get_audio(key)) is not None:
+            return entry
         try:
             raw = await self._redis.execute("GET", f"{self._prefix}:audio:{key}")
         except RedisError as exc:
@@ -288,15 +301,20 @@ class RedisAnswerCache(AnswerCache):
             return None
         if not raw:
             return None
-        audio = base64.b64decode(raw)
-        await super().put_audio(key, audio)
-        return audio
+        try:
+            data = json.loads(raw)
+            audio, alignment = base64.b64decode(data["audio"]), data.get("alignment")
+        except (ValueError, KeyError, TypeError):
+            return None
+        await super().put_audio(key, audio, alignment)
+        return audio, alignment
 
-    async def put_audio(self, key: str, audio: bytes) -> None:
-        await super().put_audio(key, audio)
+    async def put_audio(self, key: str, audio: bytes, alignment: dict | None = None) -> None:
+        await super().put_audio(key, audio, alignment)
+        value = {"audio": base64.b64encode(audio).decode("ascii"), "alignment": alignment}
         try:
             await self._redis.execute(
-                "SET", f"{self._prefix}:audio:{key}", base64.b64encode(audio).decode("ascii"),
+                "SET", f"{self._prefix}:audio:{key}", json.dumps(value, ensure_ascii=False),
                 "EX", REDIS_TTL_SECONDS,
             )  # fmt: skip
         except RedisError as exc:

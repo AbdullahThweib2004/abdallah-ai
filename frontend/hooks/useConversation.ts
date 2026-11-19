@@ -218,7 +218,7 @@ export function useConversation(
         for await (const event of streamChat({ message, history, ui_language: uiLanguage }, controller.signal)) {
           if (event.type === "start") {
             dispatch({ type: "start", id, language: event.language });
-            listener?.current?.onAnswerStart(event.language);
+            listener?.current?.onAnswerStart(event.language, id);
           } else if (event.type === "action") {
             // Arrives before the first token, so the card opens while the answer is spoken.
             dispatch({ type: "actions", actions: knownActions(event.actions, projects) });

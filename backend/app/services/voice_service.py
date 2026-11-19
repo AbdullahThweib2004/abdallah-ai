@@ -5,6 +5,8 @@ writes audio to disk or logs it, and transcripts are not logged either (they are
 messages); only sizes, durations, languages and latencies are.
 """
 
+import base64
+import json
 import logging
 import math
 import re
@@ -29,8 +31,10 @@ from app.services.language import detect_language
 from app.services.rate_limit import DAY_SECONDS
 from app.voice.audio import ALLOWED_TYPES, CANONICAL_TYPE, inspect_audio
 from app.voice.base import (
+    Alignment,
     Language,
     LanguageHint,
+    SpeechChunk,
     STTProvider,
     TTSProvider,
     VoiceError,
@@ -297,6 +301,26 @@ class SpeechStream:
     chunks: AsyncIterator[bytes]
 
 
+NDJSON = "application/x-ndjson"
+
+
+def _ndjson(item: dict) -> bytes:
+    return (json.dumps(item, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def _encode(chunk: SpeechChunk, timed: bool) -> bytes:
+    """Plain mode: the MP3 bytes. Timed mode: NDJSON lines {"audio": base64} and
+    {"alignment": {chars, starts, ends}} (seconds from the start of this sentence's audio)."""
+    if not timed:
+        return chunk.audio
+    lines = b""
+    if chunk.audio:
+        lines += _ndjson({"audio": base64.b64encode(chunk.audio).decode("ascii")})
+    if chunk.alignment is not None:
+        lines += _ndjson({"alignment": chunk.alignment.to_json()})
+    return lines
+
+
 async def speak(
     tts: TTSProvider | None,
     budget: TTSBudget,
@@ -305,35 +329,40 @@ async def speak(
     *,
     cache: AnswerCache | None = None,
     voice: str = "",
+    timestamps: bool = False,
 ) -> SpeechStream:
     """Clean the text and start synthesis. Errors before the first audio byte raise
     VoiceRequestError (the browser then speaks this answer itself); later errors end the
     stream early and are only logged.
 
-    Sentences of cached answers are served from `cache` (no provider call, no characters
-    used); the first synthesis of such a sentence is stored once it completes. `voice`
-    identifies the provider voice in the audio key."""
+    `timestamps`: stream NDJSON with base64 audio and character timestamps (for word-by-word
+    highlighting) instead of plain MP3. Sentences of cached answers are served from `cache`
+    (no provider call, no characters used), timestamps included; the first synthesis of such
+    a sentence is stored once it completes. `voice` identifies the provider voice in the key."""
     if tts is None:
         raise VoiceRequestError("tts_unavailable", 503, "Server voice is not enabled.")
     spoken = clean_for_speech(text, language)
     if not spoken:
         raise VoiceRequestError("nothing_to_say", 422, "Nothing speakable in this text.")
+    media_type = NDJSON if timestamps else tts.media_type
     audio_key: str | None = None
     if cache is not None and await cache.speech_cacheable(text, language):
         audio_key = cache.audio_key(spoken, language, voice)
-        if (audio := await cache.get_audio(audio_key)) is not None:
+        if (entry := await cache.get_audio(audio_key)) is not None:
             logger.info("TTS cache hit chars=%d language=%s", len(spoken), language)
+            audio, alignment = entry
+            hit = SpeechChunk(audio, Alignment.from_json(alignment) if alignment else None)
 
             async def cached() -> AsyncIterator[bytes]:
-                yield audio
+                yield _encode(hit, timestamps)
 
-            return SpeechStream(tts.media_type, cached())
+            return SpeechStream(media_type, cached())
     if not await budget.try_consume(len(spoken)):
         log_rate_limit("app", "tts_daily_chars", route="tts")
         raise VoiceRequestError("tts_quota", 429, "Today's voice budget is used up.")
 
     started = time.perf_counter()
-    chunks = tts.stream(spoken, language=language)
+    chunks = tts.stream_timed(spoken, language=language)
     try:
         first = await anext(chunks)
     except (VoiceError, StopAsyncIteration) as exc:
@@ -354,17 +383,22 @@ async def speak(
     )
 
     async def body() -> AsyncIterator[bytes]:
-        parts = [first]
-        yield first
+        audio = bytearray(first.audio)
+        alignment = Alignment([], [], [])
+        if first.alignment:
+            alignment.extend(first.alignment)
+        yield _encode(first, timestamps)
         try:
             async for chunk in chunks:
-                if audio_key:
-                    parts.append(chunk)
-                yield chunk
+                audio += chunk.audio
+                if chunk.alignment:
+                    alignment.extend(chunk.alignment)
+                yield _encode(chunk, timestamps)
         except VoiceError as exc:
             logger.warning("TTS stream ended early: %s", exc)
             return
         if audio_key and cache is not None:  # only complete audio is ever cached
-            await cache.put_audio(audio_key, b"".join(parts))
+            timing = alignment.to_json() if alignment.chars else None
+            await cache.put_audio(audio_key, bytes(audio), timing)
 
-    return SpeechStream(tts.media_type, body())
+    return SpeechStream(media_type, body())

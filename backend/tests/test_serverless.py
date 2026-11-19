@@ -207,10 +207,11 @@ async def test_answer_cache_and_audio_are_shared_between_instances():
     await a.put(key, reply)
     assert await b.get(key) == reply
     assert await b.speech_cacheable("Email or LinkedIn.", "en")  # loaded from Redis
-    await a.put_audio("audio1", b"\x00mp3")
-    assert await b.get_audio("audio1") == b"\x00mp3"
-    stored = fake.data[f"aa:cache:{a.namespace}:audio:audio1"]
-    assert base64.b64decode(stored) == b"\x00mp3"  # type: ignore[arg-type]
+    timing = {"chars": ["H", "i"], "starts": [0.0, 0.1], "ends": [0.1, 0.2]}
+    await a.put_audio("audio1", b"\x00mp3", timing)
+    assert await b.get_audio("audio1") == (b"\x00mp3", timing)  # timestamps travel with it
+    stored = json.loads(fake.data[f"aa:cache:{a.namespace}:audio:audio1"])  # type: ignore[arg-type]
+    assert base64.b64decode(stored["audio"]) == b"\x00mp3" and stored["alignment"] == timing
     assert "How can I contact him" not in json.dumps(fake.data, default=str)  # hashes only
 
 
