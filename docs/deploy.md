@@ -145,3 +145,15 @@ npx vercel curl /api/v1/chat --deployment <preview-url> -- -X POST \
 | Retrieval | ~5 ms once warm |
 
 The rest of the voice time is the 1.5 s silence wait and three round trips to US-East.
+
+Lighthouse, production, 3 runs each, Chrome with GPU acceleration:
+
+| Form factor | Performance | Accessibility / Best practices / SEO | LCP | TBT |
+|---|---|---|---|---|
+| Desktop | 99–100 | 100 / 100 / 100 | 0.5–0.7 s | 0–20 ms |
+| Mobile (simulated slow 4G, 4× CPU) | 77–83 | 100 / 100 / 100 | 3.1–3.2 s | 440–660 ms |
+
+Browsers without GPU acceleration (software WebGL such as SwiftShader or llvmpipe) get the CSS orb
+instead of the robot. Drawing the robot on the CPU blocked the main thread for over 20 s in
+Lighthouse. Headless Chrome uses software WebGL, so automated checks that need the robot
+must launch Chrome with `--ignore-gpu-blocklist --enable-gpu`.
