@@ -56,8 +56,14 @@ export function SpokenText({ text, lang, rtl, view, entryKey }: Props) {
       </span>
     );
     if (rtl && isLatin(token)) {
-      // The word's punctuation tail is a second span with the same timing, outside the <bdi>.
-      const tail = token.text.match(TRAILING)?.[0] ?? "";
+      // At the END of an English run (next word not English, a line break, or Arabic
+      // punctuation), the word's punctuation tail is a second span with the same timing,
+      // outside the <bdi>. Inside a run ("Nawa: Neural …") punctuation stays with the word.
+      const next = tokens[index + 1];
+      const runContinues =
+        next !== undefined && isLatin(next) && !text.slice(token.end, next.start).includes("\n");
+      const rawTail = token.text.match(TRAILING)?.[0] ?? "";
+      const tail = runContinues && !/[\u060C\u061B\u061F]/.test(rawTail) ? "" : rawTail;
       const core = span(token.text.slice(0, token.text.length - tail.length), `${token.start}`);
       if (latinRun && !gap.includes("\n")) {
         latinRun.push(gap, core);
