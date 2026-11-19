@@ -11,7 +11,8 @@ import { LevelMeter } from "./levels";
 
 export const MAX_MS = 30_000;
 export const COUNTDOWN_FROM_MS = 5_000;
-// Quiet time that ends a question (NEXT_PUBLIC_VAD_SILENCE_MS, default 1500, kept in 500–5000).
+// Quiet time that ends a question (NEXT_PUBLIC_VAD_SILENCE_MS, default 1100, kept in 500–5000).
+// 1100 ms: mid-sentence pauses up to 1 s did not end the turn in fake-mic tests (EN and AR).
 const SILENCE_MS = silenceMs(process.env.NEXT_PUBLIC_VAD_SILENCE_MS);
 // Give up early if the visitor never starts talking.
 const NO_SPEECH_TIMEOUT_MS = 8_000;
@@ -26,7 +27,7 @@ const MIME_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp
 
 export function silenceMs(value: string | undefined): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && value?.trim() ? Math.min(5_000, Math.max(500, parsed)) : 1_500;
+  return Number.isFinite(parsed) && value?.trim() ? Math.min(5_000, Math.max(500, parsed)) : 1_100;
 }
 
 export type MicErrorKind = "denied" | "missing" | "unsupported" | "failed";
