@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic } from "next/font/google";
 
+import { siteUrl } from "@/lib/site/url";
+
 import { SiteHeader } from "@/components/ui/SiteHeader";
 import { directionOf, getDictionary } from "@/lib/i18n/config";
 import { getLocale } from "@/lib/i18n/server";
@@ -27,7 +29,7 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const t = getDictionary(await getLocale());
   return {
-    metadataBase: new URL(process.env.SITE_URL ?? "http://localhost:3000"),
+    metadataBase: new URL(siteUrl()),
     title: { default: t.meta.title, template: `%s · ${t.meta.title}` },
     description: t.meta.description,
     openGraph: {
