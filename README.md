@@ -98,7 +98,7 @@ Measured with the evaluation suites in `backend/evals/` (main model `gpt-oss-120
 | Tokens per question | ~1,950 input / ~80 output |
 | Cost per question | ~$0.00034 |
 | Live site: typed question → first words of the answer | **2.3 s** EN / **2.8 s** AR |
-| Voice: end of speech → first audio | **2.8 s** with a local backend; **5.7–6.2 s** on the live site from Europe (three round trips to US-East) |
+| Voice on the live site: end of speech → first audio | **2.2–2.6 s** cached, **2.4–3.6 s** uncached (EN/AR, including the 1.1 s silence wait) |
 | Robot frame rate (Intel Iris Xe, Chrome traces) | **60 fps**, 0 frames over 33 ms (also on mobile with 4× CPU slowdown) |
 | Lighthouse on the live site (desktop / mobile) | performance **99–100 / 77–83**; accessibility, best practices and SEO **100** |
 

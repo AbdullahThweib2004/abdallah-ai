@@ -139,12 +139,35 @@ npx vercel curl /api/v1/chat --deployment <preview-url> -- -X POST \
 | Typed question → first answer text, in the browser | 2.3 s (EN), 2.8 s (AR), including the model loading on a fresh instance |
 | Cold API request (no page load first) | full answer 3.8 s |
 | Warm API request | first byte 0.5 s, full answer 1.1 s |
-| Voice, end of speech → first audio (headless Chrome, fake microphone, from Europe) | 6.2 s (EN), 5.7 s (AR) |
+| Voice, end of speech → first audio (Chrome with GPU, fake microphone, from the Middle East) | **2.2–2.6 s** when the answer is cached; **2.4–3.6 s** when it isn't (EN 3.3–3.6 s, AR 2.4–2.6 s) |
 | Voice server steps | Whisper 0.26–0.33 s, LLM 0.4–0.7 s, ElevenLabs first byte 0.17–0.38 s |
 | Function startup | 1.3 s; the embedding model loads in the background while the first request runs |
 | Retrieval | ~5 ms once warm |
 
-The rest of the voice time is the 1.5 s silence wait and three round trips to US-East.
+A voice turn breaks down into: the 1.1 s silence wait (`NEXT_PUBLIC_VAD_SILENCE_MS`), the
+upload and transcription (0.6–0.8 s), the LLM's first complete sentence (0.2 s when cached, up to
+1.3 s when not), and ElevenLabs' first byte (0.2 s). An earlier 6 s reading came from headless
+Chrome rendering the robot without a GPU, which blocked the page. Those browsers now get the orb.
+
+**Region (measured 2026-11-19, preview deploys in iad1 and fra1 from here):**
+
+| From the function to… | iad1 (warm median) | fra1 (warm median) |
+|---|---|---|
+| Groq API round trip | 76 ms | 170 ms |
+| Groq first streamed byte | 110–145 ms | 80 ms |
+| ElevenLabs API round trip | 76–115 ms | 195–210 ms |
+| ElevenLabs first audio byte | 205 ms | 140 ms |
+| Upstash (US-East store) | 3 ms | 96 ms |
+
+The full transcribe, chat and speak chain from here took the same time in both regions: 2.27 s
+in iad1 and 2.26 s in fra1. A Frankfurt Redis would save about 0.3–0.4 s per voice turn in fra1,
+roughly 10%, so the function stays in **iad1** next to the US-East Redis. To move anyway: add
+`"regions": ["fra1"]` to the backend function in `vercel.json`, connect a new Upstash database
+in eu-central-1, and remove the old store's variables.
+
+**Silence wait:** lowered from 1.5 s to 1.1 s. In fake-microphone tests with synthetic EN and AR
+questions, mid-sentence pauses of 0.5, 0.7, 0.9 and 1.0 s never ended the turn early; a 1.2 s
+pause did, as designed.
 
 Lighthouse, production, 3 runs each, Chrome with GPU acceleration:
 
