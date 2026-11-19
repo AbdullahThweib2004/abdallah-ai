@@ -30,6 +30,7 @@ from app.services.answer_quality import answer_problems, normalize
 from app.services.chat_service import build_messages, previous_user_message, reasoning_effort_for
 from app.services.knowledge_service import load_knowledge_service
 from app.services.language import detect_language
+from evals.api_target import ApiTarget
 from evals.quota import QuotaGuard, QuotaStop, add_quota_arguments, eval_settings, select_cases
 
 CASES_FILE = Path(__file__).parent / "chat_cases.yaml"
@@ -97,6 +98,8 @@ async def ask(provider: LLMProvider, context: Context, case: dict, settings) -> 
     """Same path as the app: retrieve → prompt with retrieved chunks → stream the answer.
 
     Returns the RAW reply, including the model's `ACTIONS:` first line."""
+    if isinstance(provider, ApiTarget):  # --api-url: the deployed backend does all of this
+        return await provider.ask(case)
     request = ChatRequest(
         message=case["message"],
         history=[ChatTurn(**turn) for turn in case.get("history", [])],
@@ -191,6 +194,7 @@ def print_table(results: list[Result]) -> None:
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     add_quota_arguments(parser)
+    parser.add_argument("--api-url", help="evaluate a deployed site's /api/v1/chat instead")
     parser.add_argument("--delay", type=float, default=2.0, help="seconds between cases")
     parser.add_argument("--show-answers", action="store_true", help="print every answer")
     parser.add_argument("--lang", choices=["en", "ar"], help="run only cases in this language")
@@ -213,7 +217,7 @@ async def main() -> int:
     if context is None:
         print("Knowledge base failed to load", file=sys.stderr)
         return 2
-    provider = build_provider(settings)
+    provider = ApiTarget(args.api_url) if args.api_url else build_provider(settings)
 
     cases = select_cases(
         yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"],
@@ -296,6 +300,8 @@ async def main() -> int:
             else "  (set LLM_INPUT_COST_PER_MTOK / LLM_OUTPUT_COST_PER_MTOK for a real estimate)"
         )
     )
+    if isinstance(provider, ApiTarget):
+        print(f"Served from the site's answer cache: {provider.cached}/{len(cases)}")
     if stopped:
         print(f"\n{stopped}")
         return 3

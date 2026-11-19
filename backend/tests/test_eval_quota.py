@@ -1,5 +1,7 @@
 """Quota-safe eval runner: model choice, case selection, early stop (no network)."""
 
+import json
+
 import pytest
 
 from app.llm.base import LLMChunk, LLMRateLimitError, Usage
@@ -108,3 +110,34 @@ async def test_backoff_stops_on_a_daily_limit_without_waiting(fixture_kb, contex
             provider, context, {"id": "x", "message": "hi"}, make_settings(fixture_kb)
         )
     assert provider.calls == 1
+
+
+@pytest.mark.anyio
+async def test_api_target_rebuilds_the_reply_from_the_sse_stream_and_maps_429() -> None:
+    import httpx
+
+    from evals.api_target import ApiTarget
+
+    stream = (
+        'event: start\ndata: {"request_id": "r"}\n\n'
+        'event: action\ndata: {"actions": [{"type": "show_contact"}]}\n\n'
+        'event: token\ndata: {"text": "Email or "}\n\n'
+        'event: token\ndata: {"text": "LinkedIn."}\n\n'
+        'event: done\ndata: {"usage": {"input_tokens": 0, "output_tokens": 0}, "cached": true}\n\n'
+    )
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        if len(calls) == 2:
+            return httpx.Response(429, headers={"retry-after": "7"}, json={"code": "rate_limited"})
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    target = ApiTarget("https://site.example/", transport=httpx.MockTransport(handler))
+    raw, _ = await target.ask({"message": "How can I contact him?", "language": "en"})
+    assert raw == 'ACTIONS: [{"type": "show_contact"}]\nEmail or LinkedIn.'
+    assert target.cached == 1 and calls[0]["ui_language"] == "en"
+    with pytest.raises(LLMRateLimitError) as limited:
+        await target.ask({"message": "again"})
+    assert limited.value.retry_after == 7
+    await target.aclose()

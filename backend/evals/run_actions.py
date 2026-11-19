@@ -20,6 +20,7 @@ from app.agents.actions import ActionPrefixParser, PrefixResult, dump_actions, s
 from app.core.config import get_settings
 from app.llm.factory import build_provider
 from app.services.language import detect_language
+from evals.api_target import ApiTarget
 from evals.quota import QuotaGuard, QuotaStop, add_quota_arguments, eval_settings, select_cases
 from evals.run_chat import ask_with_backoff, build_context
 
@@ -53,6 +54,7 @@ class Outcome:
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     add_quota_arguments(parser)
+    parser.add_argument("--api-url", help="evaluate a deployed site's /api/v1/chat instead")
     parser.add_argument("--lang", choices=["en", "ar"], help="run only cases in this language")
     parser.add_argument("--delay", type=float, default=2.0, help="seconds between cases")
     parser.add_argument("--show-answers", action="store_true", help="print every answer")
@@ -66,7 +68,7 @@ async def main() -> int:
     if context is None:
         print("Knowledge base failed to load", file=sys.stderr)
         return 2
-    provider = build_provider(settings)
+    provider = ApiTarget(args.api_url) if args.api_url else build_provider(settings)
 
     cases = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
     for case in cases:
@@ -136,6 +138,8 @@ async def main() -> int:
             else ""
         )
     )
+    if isinstance(provider, ApiTarget):
+        print(f"Served from the site's answer cache: {provider.cached}/{len(cases)}")
     if stopped:
         print(f"\n{stopped}")
         return 3
