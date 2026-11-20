@@ -1,7 +1,7 @@
 """Record the demo on the live site: page frames (CDP screencast) + every timing needed to mix
 the audio afterwards.
 
-    uv run --with playwright python scripts/demo-video/record.py --size 1920x1080 --out <dir>
+    uv run --with playwright python scripts/demo-video/record.py --size 1280x720 --scale 1.5 --out <dir>
 
 Scene: the robot follows a scripted pointer, "Say hi" plays the greeting (words light up in the
 transcript), the visitor asks by voice (Chrome's fake microphone plays out/visitor-mic.wav
@@ -110,7 +110,8 @@ def center(locator):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--size", default="1920x1080")
+    parser.add_argument("--size", default="1280x720", help="CSS viewport")
+    parser.add_argument("--scale", type=float, default=1.5, help="deviceScaleFactor (frames = size × scale)")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--greeting-seconds", type=float, default=9.0)
     parser.add_argument("--refetch-only", action="store_true", help="only re-fetch missing sentence audio")
@@ -119,6 +120,7 @@ def main() -> int:
         refetch_missing(args.out)
         return 0
     width, height = (int(v) for v in args.size.split("x"))
+    frame_w, frame_h = round(width * args.scale), round(height * args.scale)
     out: Path = args.out
     (out / "frames").mkdir(parents=True, exist_ok=True)
     (out / "speak").mkdir(exist_ok=True)
@@ -140,7 +142,7 @@ def main() -> int:
             ],
         )  # fmt: skip
         context = browser.new_context(
-            viewport={"width": width, "height": height}, device_scale_factor=1,
+            viewport={"width": width, "height": height}, device_scale_factor=args.scale,
             permissions=["microphone"], locale="en-US", color_scheme="dark",
         )  # fmt: skip
         context.add_init_script(INIT)
@@ -174,20 +176,30 @@ def main() -> int:
             cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
 
         cdp.on("Page.screencastFrame", on_frame)
-        cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 88, "maxWidth": width, "maxHeight": height, "everyNthFrame": 1})
-        page.wait_for_timeout(500)
+        # Layout check at this viewport: nothing may scroll; transcript text size in frame pixels.
+        layout = page.evaluate(
+            """(scale) => { const word = document.querySelector('section.transcript-panel .tw');
+              const box = (s) => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; };
+              return { scroll: [document.scrollingElement.scrollHeight, innerHeight, document.scrollingElement.scrollWidth, innerWidth],
+                       transcriptFontPx: parseFloat(getComputedStyle(word).fontSize) * scale,
+                       transcriptLineBoxPx: word.getBoundingClientRect().height * scale,
+                       transcript: box('section.transcript-panel'), robot: box('.avatar-stage'), composer: box('form[data-greeting-skip]') }; }""",
+            args.scale,
+        )
+        cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 95, "maxWidth": frame_w, "maxHeight": frame_h, "everyNthFrame": 1})
+        page.wait_for_timeout(150)
 
-        # 1. The robot follows a smooth scripted pointer.
-        here = (width * 0.62, height * 0.25)
+        # 1. "Say hi" right away: the greeting plays and lights up in the transcript.
+        here = (width * 0.62, height * 0.30)
         page.mouse.move(*here)
-        here = glide(page, here, (width * 0.85, height * 0.35), 1100)
-        here = glide(page, here, (width * 0.70, height * 0.75), 1100)
-        here = glide(page, here, (width * 0.40, height * 0.45), 1200)
-        # 2. "Say hi": the greeting plays and lights up in the transcript.
-        here = glide(page, here, center(say_hi), 700)
-        page.wait_for_timeout(250)
+        here = glide(page, here, center(say_hi), 420)
         say_hi.click()
-        page.wait_for_timeout(int(args.greeting_seconds * 1000))
+        clicked_at = time.time()
+        # 2. Meanwhile the robot follows a smooth scripted pointer.
+        here = glide(page, here, (width * 0.80, height * 0.30), 1100)
+        here = glide(page, here, (width * 0.66, height * 0.72), 1100)
+        here = glide(page, here, (width * 0.50, height * 0.40), 1000)
+        page.wait_for_timeout(max(0, int((args.greeting_seconds - (time.time() - clicked_at)) * 1000)))
         # 3. The visitor asks by voice (barge-in stops the greeting).
         mic = page.locator("button[aria-describedby='voice-status voice-privacy']")
         here = glide(page, here, center(mic), 800)
@@ -201,13 +213,19 @@ def main() -> int:
             " return a && a.paused && !document.querySelector('[data-entry^=\"answer:\"] .tw[data-state=current]'); }",
             timeout=90_000,
         )
-        page.wait_for_timeout(2200)
+        page.wait_for_timeout(600)
         cdp.send("Page.stopScreencast")
         page.wait_for_timeout(300)
 
         events = page.evaluate("() => window.__demo")
         events["greeting_url"] = SITE + "/audio/greeting-en.mp3"
         events["card_open"] = page.locator("aside[aria-labelledby=card-heading]").count()
+        events["layout"] = layout
+        events["say_hi_at"] = clicked_at
+        # The visitor's question as the panel shows it (the caption must match it).
+        events["question_text"] = page.evaluate(
+            "() => { const p = document.querySelector('section.transcript-panel li:last-child p.text-xs'); return p ? p.lastChild.textContent : ''; }"
+        )
         events["answer_text"] = page.evaluate(
             "() => document.querySelector('section.transcript-panel [data-entry^=\"answer:\"] .sr-only')?.textContent ?? ''"
         )
@@ -225,7 +243,7 @@ def main() -> int:
     span = frames[-1]["t"] - frames[0]["t"] if frames else 0
     print(f"{len(frames)} frames over {span:.1f} s ({len(frames) / max(span, 1e-9):.1f} fps), "
           f"{len(saved)} spoken sentences ({sum(len(s['text']) for s in saved)} chars requested), "
-          f"card open: {events['card_open']}")  # fmt: skip
+          f"card open: {events['card_open']}\nlayout: {layout}\nquestion in panel: {events['question_text']!r}")  # fmt: skip
     return 0
 
 
