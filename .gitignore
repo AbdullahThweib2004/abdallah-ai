@@ -61,3 +61,6 @@ frontend/AGENTS.md
 
 # --- Private documents ---
 docs/spec.pdf
+
+# Demo video outputs and audio (scripts/demo-video): regenerated, never committed.
+scripts/demo-video/out/
